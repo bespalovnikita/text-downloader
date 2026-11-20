@@ -303,8 +303,25 @@ internal static class Program
 
     private static async Task CloseGuiAsync(Process process, CancellationToken cancellationToken)
     {
+        IntPtr verifiedWindow = IntPtr.Zero;
+        using var ready = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        ready.CancelAfter(TimeSpan.FromSeconds(15));
+        await UntilAsync(() =>
+        {
+            Require(!process.HasExited, "The application exited before its verified WPF window could be closed.");
+            verifiedWindow = WpfWindow(process.Id);
+            if (verifiedWindow == IntPtr.Zero) return false;
+            process.Refresh();
+            IntPtr actual = process.MainWindowHandle;
+            if (actual == IntPtr.Zero) return false;
+            Require(actual == verifiedWindow,
+                $"MainWindowHandle differs from the visible, enabled, responding WPF window: actual={actual}, verified={verifiedWindow}.");
+            return true;
+        }, ready.Token, "The WPF window did not become visible, enabled and responsive before close.");
         process.Refresh();
-        Require(process.CloseMainWindow(), "Could not close the actual WPF application normally.");
+        Require(process.MainWindowHandle == verifiedWindow,
+            $"MainWindowHandle changed before close: actual={process.MainWindowHandle}, verified={verifiedWindow}.");
+        Require(process.CloseMainWindow(), $"Could not close the verified WPF window {verifiedWindow}; visible={IsWindowVisible(verifiedWindow)}, enabled={IsWindowEnabled(verifiedWindow)}.");
         await process.WaitForExitAsync(cancellationToken).WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
         Require(process.ExitCode == 0, "The application failed while closing its window.");
     }
@@ -342,7 +359,7 @@ internal static class Program
     private static IntPtr WpfWindow(int processId)
     {
         IntPtr result = IntPtr.Zero;
-        EnumWindows((window, _) =>
+        EnumWindows((window, parameter) =>
         {
             GetWindowThreadProcessId(window, out uint owner);
             if (owner != processId) return true;
@@ -350,7 +367,9 @@ internal static class Program
             GetClassName(window, name, name.Capacity);
             var title = new StringBuilder(256);
             GetWindowText(window, title, title.Capacity);
-            if (name.ToString().StartsWith("HwndWrapper[", StringComparison.Ordinal) && title.ToString() == "Text Downloader")
+            if (name.ToString().StartsWith("HwndWrapper[", StringComparison.Ordinal) && title.ToString() == "Text Downloader" &&
+                IsWindowVisible(window) && IsWindowEnabled(window) &&
+                SendMessageTimeout(window, 0, IntPtr.Zero, IntPtr.Zero, 0x0002, 250, out _) != IntPtr.Zero)
             { result = window; return false; }
             return true;
         }, IntPtr.Zero);
@@ -362,4 +381,8 @@ internal static class Program
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr window, StringBuilder name, int maximum);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr window, StringBuilder text, int maximum);
+    [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("user32.dll")] private static extern bool IsWindowEnabled(IntPtr window);
+    [DllImport("user32.dll", SetLastError = true)] private static extern IntPtr SendMessageTimeout(IntPtr window, uint message,
+        IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out UIntPtr result);
 }
