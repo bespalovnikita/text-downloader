@@ -229,6 +229,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async Task RunSessionAsync(QueueItem[] pending, string directory, BookFormat format, bool confirmAdult, bool refresh, CancellationToken token)
     {
+        string? sessionError = null;
         try
         {
             await SaveOrThrowAsync();
@@ -311,16 +312,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         catch (Exception error)
         {
-            CurrentStatus = "Очередь остановлена: " + error.Message;
+            sessionError = "Очередь остановлена: " + error.Message;
+            CurrentStatus = sessionError;
             Log(CurrentStatus);
         }
         finally
         {
             IsBusy = false;
             ActiveItem = null;
-            CurrentStatus = _stopReason == StopReason.Pause ? "Пауза. Нажмите «Продолжить очередь»." :
+            CurrentStatus = sessionError ?? (_stopReason == StopReason.Pause ? "Пауза. Нажмите «Продолжить очередь»." :
                 _stopReason == StopReason.Cancel ? "Загрузка отменена." : _saveFailed ? "Ошибка сохранения состояния. Проверьте журнал и права на папку профиля." :
-                $"Очередь завершена. Готово: {Items.Count(q => q.Status == QueueStatus.Completed)}, ошибок: {Items.Count(q => q.Status == QueueStatus.Failed)}.";
+                $"Очередь завершена. Готово: {Items.Count(q => q.Status == QueueStatus.Completed)}, ошибок: {Items.Count(q => q.Status == QueueStatus.Failed)}.");
             await SaveSafelyAsync();
             UpdateTray();
         }
