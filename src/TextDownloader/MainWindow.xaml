@@ -52,7 +52,7 @@
        <DataGridTextColumn Header="Статус" Binding="{Binding StatusText}" Width="85" ElementStyle="{StaticResource GridTextStyle}"/>
       </DataGrid.Columns>
      </DataGrid>
-     <StackPanel Grid.Row="2" Margin="0,10,0,0"><ProgressBar x:Name="CurrentProgress" Height="5" Minimum="0" Maximum="100" Value="{Binding ActiveItem.Percent}"/><TextBlock x:Name="StatusBlock" Text="{Binding CurrentStatus}" TextWrapping="Wrap" Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}"/></StackPanel>
+     <StackPanel Grid.Row="2" Margin="0,10,0,0"><ProgressBar x:Name="CurrentProgress" Height="5" Minimum="0" Maximum="100" Value="{Binding ActiveItem.Percent,Mode=OneWay}"/><TextBlock x:Name="StatusBlock" Text="{Binding CurrentStatus}" TextWrapping="Wrap" Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}"/></StackPanel>
      <Expander Grid.Row="3" Header="Журнал" Foreground="#EEF1F8" Margin="0,12,0,0">
       <Grid><Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions><TextBox x:Name="JournalBox" Text="{Binding JournalText,Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" Height="140" VerticalScrollBarVisibility="Auto"/><Button Grid.Row="1" Content="Сохранить журнал…" HorizontalAlignment="Right" Click="OnSaveJournal"/></Grid>
      </Expander>

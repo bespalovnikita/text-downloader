@@ -56,7 +56,7 @@ internal static class Program
         // Stop in a real in-flight request. No partial book or success is allowed.
         network.HoldSecondPage = true;
         Click(window, "StartButton");
-        await network.SecondPageStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await ReachedSecondPageAsync(window, network);
         Click(window, "PauseButton");
         await window.ActiveSession.WaitAsync(TimeSpan.FromSeconds(10));
         Assert(window.Items[0].Status == QueueStatus.Paused && !window.IsBusy, "Pause state");
@@ -98,7 +98,7 @@ internal static class Program
         network.SecondPageStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
         await window.AddUrlsAsync("https://sefan.ru/stories/ru/2/drama/chitat_cancel-fixture_1.html");
         Click(window, "StartButton");
-        await network.SecondPageStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await ReachedSecondPageAsync(window, network);
         Click(window, "CancelButton");
         await window.ActiveSession.WaitAsync(TimeSpan.FromSeconds(10));
         Assert(window.Items[2].Status == QueueStatus.Cancelled && window.History.Count == 2, "Cancellation state/history");
@@ -145,6 +145,22 @@ internal static class Program
         var button = (Button)window.FindName(name);
         Assert(button.IsEnabled, "Disabled control: " + name);
         button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+    }
+    private static async Task ReachedSecondPageAsync(MainWindow window, FakeNetwork network)
+    {
+        await Task.WhenAny(network.SecondPageStarted.Task, window.ActiveSession);
+        try
+        {
+            if (!network.SecondPageStarted.Task.IsCompleted && window.ActiveSession.IsCompleted)
+                throw new InvalidOperationException("The session stopped before requesting page two.");
+            await network.SecondPageStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        catch (Exception error)
+        {
+            throw new Exception("Download did not reach page two. " + window.CurrentStatus + "\n" +
+                string.Join("\n", window.Items.Select(item => item.Status + ": " + item.Message)) +
+                "\nJournal:\n" + window.JournalText, error);
+        }
     }
     private static async Task CloseAsync(Window window)
     {
