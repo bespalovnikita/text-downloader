@@ -41,17 +41,19 @@ function Get-Release([string]$Reference) {
             # Enumerate all pages and match the exact tag; never create a second
             # draft merely because /releases/tags/{tag} returned 404.
             $wantedTag = $Reference.Substring(5)
-            $listed = Invoke-Gh -Arguments @('api', '--paginate', '--slurp', "repos/$Repository/releases?per_page=100")
-            $pages = $listed | ConvertFrom-Json -NoEnumerate
-            $candidates = @(
-                foreach ($page in $pages) {
-                    foreach ($candidate in $page) {
-                        if ([string]::Equals([string]$candidate.tag_name, $wantedTag, [StringComparison]::Ordinal)) {
-                            $candidate
-                        }
+            $candidates = @()
+            $pageNumber = 1
+            do {
+                $listed = Invoke-Gh -Arguments @('api', "repos/$Repository/releases?per_page=100&page=$pageNumber")
+                $releasePage = $listed | ConvertFrom-Json -NoEnumerate
+                if ($releasePage -isnot [array]) { throw 'GitHub вернул неверный список выпусков.' }
+                foreach ($candidate in $releasePage) {
+                    if ([string]::Equals([string]$candidate.tag_name, $wantedTag, [StringComparison]::Ordinal)) {
+                        $candidates += $candidate
                     }
                 }
-            )
+                $pageNumber++
+            } while ($releasePage.Count -eq 100)
             if ($candidates.Count -gt 1) { throw "Найдено несколько выпусков с тегом $wantedTag. Они оставлены без изменений." }
             if ($candidates.Count -eq 1) { return $candidates[0] }
             return $null

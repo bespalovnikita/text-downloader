@@ -27,16 +27,19 @@ function global:gh {
     $global:LASTEXITCODE = 0
     if ($arguments[0] -eq 'api') {
         $route = @($arguments | Where-Object { $_ -like 'repos/*' })[0]
-        if ($route.EndsWith('/releases?per_page=100')) {
-            if ($arguments -notcontains '--paginate' -or $arguments -notcontains '--slurp') {
-                throw 'Draft lookup must enumerate every release-list page.'
-            }
+        $releasePageMatch = [regex]::Match($route, '/releases\?per_page=100&page=(\d+)$')
+        if ($releasePageMatch.Success) {
             $state.listReads++
             [object[]]$items = @()
-            if ($state.release -and -not $state.hideDraft) { $items = @($state.release) }
-            # The matching draft is on a later page, after an unrelated draft.
-            [object[]]$unrelatedPage = @(@{ tag_name = 'v98.7.6'; body = 'Unrelated draft'; draft = $true; assets = @() })
-            return (ConvertTo-Json -InputObject @($unrelatedPage, $items) -Depth 8 -Compress)
+            if ($releasePageMatch.Groups[1].Value -eq '1') {
+                # A full first page requires requesting the later matching page.
+                $items = @(for ($index = 0; $index -lt 100; $index++) {
+                    @{ tag_name = "v98.7.$index"; body = 'Unrelated draft'; draft = $true; assets = @() }
+                })
+            } elseif ($releasePageMatch.Groups[1].Value -eq '2' -and $state.release -and -not $state.hideDraft) {
+                $items = @($state.release)
+            }
+            return (ConvertTo-Json -InputObject $items -Depth 8 -Compress)
         }
         if ($route.EndsWith('/latest') -and $state.latestTag) {
             return (@{ tag_name = $state.latestTag } | ConvertTo-Json -Compress)
