@@ -92,11 +92,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool ConfirmAdult { get => _settings.ConfirmAdult; set { if (IsUpdating) return; _settings.ConfirmAdult = value; Changed(); ScheduleSave(); } }
     public bool RefreshCache { get => _settings.RefreshCache; set { if (IsUpdating) return; _settings.RefreshCache = value; Changed(); ScheduleSave(); } }
     public bool MinimizeToTray { get => _settings.MinimizeToTray; set { if (IsUpdating) return; _settings.MinimizeToTray = value; Changed(); ScheduleSave(); } }
-    private string _currentStatus = "Добавьте ссылку на страницу чтения Sefan.";
+    private string _currentStatus = "Добавьте ссылку на рассказ Sefan или публикацию Bestweapon.";
     public string CurrentStatus { get => _currentStatus; private set => Set(ref _currentStatus, value); }
     private string _previewTitle = "Выберите рассказ";
     public string PreviewTitle { get => _previewTitle; private set => Set(ref _previewTitle, value); }
-    private string _previewMetadata = "Sefan · EPUB / FB2";
+    private string _previewMetadata = "Sefan / Bestweapon · EPUB / FB2";
     public string PreviewMetadata { get => _previewMetadata; private set => Set(ref _previewMetadata, value); }
     private string _previewStatus = "Сведения загружаются при выборе строки.";
     public string PreviewStatus { get => _previewStatus; private set => Set(ref _previewStatus, value); }
@@ -109,7 +109,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         IAppUpdateClient? updateClient = null, string? updateTargetDirectory = null)
     {
         _store = new AppStore(profileDirectory);
-        _sourceFactory = sourceFactory ?? (() => new SefanSource());
+        _sourceFactory = sourceFactory ?? (() => new SupportedStorySource());
         _enableTray = enableTray;
         _ownsUpdateClient = updateClient is null;
         _updateClient = updateClient ?? new UpdateClient();
@@ -133,7 +133,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             QueueColumn.Width = new GridLength(Clamp(_settings.QueueWidth, 250, Math.Max(250, ActualWidth * .35)));
             PreviewColumn.Width = new GridLength(Clamp(_settings.PreviewWidth, 250, Math.Max(250, ActualWidth * .35)));
             foreach (string property in new[] { nameof(Format), nameof(OutputDirectory), nameof(ConfirmAdult), nameof(RefreshCache), nameof(MinimizeToTray) }) Changed(property);
-            CurrentStatus = Items.Count > 0 ? "Очередь восстановлена. Загрузка начнётся после нажатия «Скачать»." : "Добавьте ссылку на страницу чтения Sefan.";
+            CurrentStatus = Items.Count > 0 ? "Очередь восстановлена. Загрузка начнётся после нажатия «Скачать»." : "Добавьте ссылку на рассказ Sefan или публикацию Bestweapon.";
             Log($"Text Downloader {typeof(MainWindow).Assembly.GetName().Version}; профиль: {_store.DirectoryPath}");
         }
         catch (Exception error)
@@ -168,7 +168,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (IsUpdating || _closing) { CurrentStatus = "Добавление ссылок временно недоступно во время обновления."; return; }
         if (raw.Length > 1024 * 1024) { CurrentStatus = "Список ссылок слишком велик (не более 1 МиБ)."; return; }
         var candidates = Regex.Matches(raw, "https?://[^\\s<>\\\"']+", RegexOptions.IgnoreCase).Select(m => m.Value.TrimEnd(')', ',', ';')).ToArray();
-        if (candidates.Length == 0) { CurrentStatus = "Вставьте HTTPS-ссылку на страницу рассказа."; return; }
+        if (candidates.Length == 0) { CurrentStatus = "Вставьте HTTPS-ссылку на рассказ Sefan или публикацию Bestweapon."; return; }
         if (Items.Count + candidates.Length > 10000) { CurrentStatus = "Очередь ограничена 10 000 ссылками."; return; }
         int added = 0, rejected = 0;
         QueueItem? first = null;
@@ -187,7 +187,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
             catch (Exception error) { rejected++; Log("Ссылка отклонена: " + error.Message); }
         }
-        CurrentStatus = $"Добавлено: {added}." + (rejected > 0 ? $" Не поддерживаются: {rejected}. Нужна ссылка на страницу чтения Sefan вида название_1.html или название_1-2.html." : "");
+        CurrentStatus = $"Добавлено: {added}." + (rejected > 0 ? $" Не поддерживаются: {rejected}. Принимаются страницы чтения sefan.ru/stories и публикации bestweapon.cc/post_номер." : "");
         Log(CurrentStatus);
         if (first is not null) SelectedItem = first;
         await SaveSafelyAsync();
@@ -207,7 +207,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _previewStop = new CancellationTokenSource();
         CancellationToken token = _previewStop.Token;
         PreviewTitle = item?.DisplayTitle ?? "Выберите рассказ";
-        PreviewMetadata = "Sefan · EPUB / FB2";
+        PreviewMetadata = item is null ? "Sefan / Bestweapon · EPUB / FB2" : SourceName(item.Url) + " · EPUB / FB2";
         PreviewText = "";
         PreviewStatus = item is null ? "" : "Получаем сведения…";
         if (item is null) return;
@@ -223,11 +223,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (token.IsCancellationRequested || SelectedItem != item) return;
             item.Title = page.Title;
             PreviewTitle = page.Title;
-            PreviewMetadata = (string.IsNullOrWhiteSpace(page.Author) ? "Автор не указан" : page.Author) +
-                (page.TotalPages is > 0 ? $" · страниц: {page.TotalPages}" : " · число страниц определится при загрузке");
+            string count = IsBestweapon(item.Url)
+                ? page.TotalPages is > 1 ? $" · всего в цикле: {page.TotalPages}" : page.TotalPages == 1 ? " · одна публикация" : " · части цикла определятся при загрузке"
+                : page.TotalPages is > 0 ? $" · страниц: {page.TotalPages}" : " · число страниц определится при загрузке";
+            PreviewMetadata = SourceName(page.Url.AbsoluteUri) + " · " + (string.IsNullOrWhiteSpace(page.Author) ? "Автор не указан" : page.Author) +
+                count;
             PreviewText = page.Fragment.Replace("\r\n", "\n").Trim();
             if (PreviewText.Length > 3000) PreviewText = PreviewText[..3000] + "…";
-            PreviewStatus = "Начало рассказа. Файлы появятся после завершения загрузки.";
+            PreviewStatus = IsBestweapon(item.Url)
+                ? "Выбранная публикация и предыдущие части цикла будут собраны в одну книгу."
+                : "Начало рассказа. Файлы появятся после завершения загрузки.";
         }
         catch (OperationCanceledException) { }
         catch (Exception error)
@@ -267,7 +272,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 if (!Items.Contains(item)) continue;
                 ActiveItem = item;
                 item.Status = QueueStatus.Running;
-                item.Message = "Получаем страницы…";
+                item.Message = "Получаем текст…";
                 CurrentStatus = item.DisplayTitle;
                 var progress = new Progress<DownloadProgress>(p =>
                 {
@@ -275,7 +280,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     item.CompletedPages = p.CompletedPages;
                     item.TotalPages = p.TotalPages;
                     item.Message = p.Message;
-                    CurrentStatus = $"{item.DisplayTitle}: {p.CompletedPages}/{p.TotalPages?.ToString() ?? "?"} · {p.Message}";
+                    CurrentStatus = $"{item.DisplayTitle}: {CountLabel(item.Url)}: {p.CompletedPages}/{p.TotalPages?.ToString() ?? "?"} · {p.Message}";
                     UpdateTray();
                 });
                 try
@@ -308,14 +313,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         item.Message = "Книга сохранена, но историю записать не удалось. " + string.Join("; ", item.Files);
                         throw;
                     }
-                    Log($"Готово: {item.Title}; {result.Book.PageCount} страниц; " + string.Join("; ", result.Files));
+                    Log($"Готово: {item.Title}; {CountLabel(item.Url)}: {result.Book.PageCount}; " + string.Join("; ", result.Files));
                     if (SelectedItem == item)
                     {
                         // A slow network preview must not replace the completed
                         // book after a fast export from the page cache.
                         _previewStop?.Cancel();
                         PreviewTitle = result.Book.Title;
-                        PreviewMetadata = (result.Book.Author ?? "Автор не указан") + $" · страниц: {result.Book.PageCount}";
+                        PreviewMetadata = SourceName(result.Book.SourceUrl.AbsoluteUri) + " · " + (result.Book.Author ?? "Автор не указан") + $" · {CountLabel(item.Url)}: {result.Book.PageCount}";
                         PreviewText = string.Join("\n\n", result.Book.Paragraphs.Take(12));
                         if (PreviewText.Length > 5000) PreviewText = PreviewText[..5000] + "…";
                         PreviewStatus = "Книга готова. Нажмите «Открыть книгу».";
@@ -324,7 +329,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 catch (OperationCanceledException)
                 {
                     item.Status = _stopReason == StopReason.Pause ? QueueStatus.Paused : QueueStatus.Cancelled;
-                    item.Message = item.Status == QueueStatus.Paused ? "Пауза. Продолжение использует загруженные страницы." : "Загрузка отменена. Страницы сохранены в кеше.";
+                    item.Message = item.Status == QueueStatus.Paused ? "Пауза. Продолжение использует загруженные фрагменты." : "Загрузка отменена. Фрагменты сохранены в кеше.";
                     Log(item.DisplayTitle + ": " + item.Message);
                     break;
                 }
@@ -402,6 +407,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (_journal.Count > 300) _journal.RemoveAt(0);
         Changed(nameof(JournalText));
     }
+    private static bool IsBestweapon(string url) => Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) &&
+        (uri.Host.Equals("bestweapon.cc", StringComparison.OrdinalIgnoreCase) || uri.Host.Equals("www.bestweapon.cc", StringComparison.OrdinalIgnoreCase));
+    private static string SourceName(string url) => IsBestweapon(url) ? "Bestweapon" : "Sefan";
+    private static string CountLabel(string url) => IsBestweapon(url) ? "частей" : "страниц";
     private bool Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
     {
         if (EqualityComparer<T>.Default.Equals(field, value)) return false;

@@ -18,12 +18,12 @@
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
   <Grid Grid.Row="0" Margin="0,0,0,12">
    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-   <StackPanel><TextBlock Text="Text Downloader" FontSize="25" FontWeight="SemiBold"/><TextBlock Text="Все страницы рассказа → электронная книга" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0"/></StackPanel>
+   <StackPanel><TextBlock Text="Text Downloader" FontSize="25" FontWeight="SemiBold"/><TextBlock Text="Sefan и Bestweapon: рассказы и циклы → электронная книга" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0"/></StackPanel>
    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"><Button x:Name="HistoryButton" Content="История…" Click="OnHistory"/><Button x:Name="UpdateButton" Content="Обновления…" Click="OnUpdate" IsEnabled="{Binding CanOpenUpdates}"/></StackPanel>
   </Grid>
   <Grid Grid.Row="1" Margin="0,0,0,14">
    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-   <TextBox x:Name="UrlInput" IsEnabled="{Binding CanReceiveInput}" MinHeight="38" VerticalContentAlignment="Center" ToolTip="Одна или несколько ссылок на страницы чтения Sefan" KeyDown="OnUrlKeyDown" AutomationProperties.Name="Ссылка на рассказ"/>
+   <TextBox x:Name="UrlInput" IsEnabled="{Binding CanReceiveInput}" MinHeight="38" VerticalContentAlignment="Center" ToolTip="Страницы чтения sefan.ru/stories или публикации bestweapon.cc/post_номер; можно вставить несколько ссылок" KeyDown="OnUrlKeyDown" AutomationProperties.Name="Ссылка на рассказ Sefan или Bestweapon"/>
    <Button x:Name="PasteButton" IsEnabled="{Binding CanReceiveInput}" Grid.Column="1" Content="Вставить" Click="OnPaste"/>
    <Button x:Name="AddButton" IsEnabled="{Binding CanReceiveInput}" Grid.Column="2" Content="+ Добавить" Background="{StaticResource AccentBrush}" Click="OnAdd"/>
    <Button x:Name="LoadListButton" IsEnabled="{Binding CanReceiveInput}" Grid.Column="3" Content="Открыть список…" Click="OnLoadList"/>
@@ -48,7 +48,7 @@
      <DataGrid x:Name="DownloadsGrid" IsEnabled="{Binding CanReceiveInput}" Grid.Row="1" ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem,Mode=TwoWay}" IsReadOnly="True">
       <DataGrid.Columns>
        <DataGridTextColumn Header="Рассказ" Binding="{Binding DisplayTitle}" Width="*" ElementStyle="{StaticResource GridTextStyle}"/>
-       <DataGridTextColumn Header="Страницы" Binding="{Binding PageProgress}" Width="85" ElementStyle="{StaticResource GridTextStyle}"/>
+       <DataGridTextColumn Header="Стр. / части" Binding="{Binding PageProgress}" Width="95" ElementStyle="{StaticResource GridTextStyle}"/>
        <DataGridTextColumn Header="Статус" Binding="{Binding StatusText}" Width="85" ElementStyle="{StaticResource GridTextStyle}"/>
       </DataGrid.Columns>
      </DataGrid>

@@ -29,7 +29,7 @@ public sealed class HistoryWindow : Window
         var grid = new DataGrid { AutoGenerateColumns = false, IsReadOnly = true, SelectionMode = DataGridSelectionMode.Single };
         grid.Columns.Add(new DataGridTextColumn { Header = "Название", Binding = new System.Windows.Data.Binding("Title"), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
         grid.Columns.Add(new DataGridTextColumn { Header = "Дата", Binding = new System.Windows.Data.Binding("LocalDate"), Width = 145 });
-        grid.Columns.Add(new DataGridTextColumn { Header = "Страниц", Binding = new System.Windows.Data.Binding("Pages"), Width = 75 });
+        grid.Columns.Add(new DataGridTextColumn { Header = "Стр. / частей", Binding = new System.Windows.Data.Binding("Pages"), Width = 100 });
         panel.Children.Add(grid);
         var entries = history.ToArray();
         grid.ItemsSource = entries;

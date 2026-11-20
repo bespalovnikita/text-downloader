@@ -16,6 +16,7 @@ public static class BookExporter
     private static readonly XNamespace Epub = "http://www.idpf.org/2007/ops";
     private static readonly XNamespace Ncx = "http://www.daisy.org/z3986/2005/ncx/";
     private static readonly XNamespace Fb = "http://www.gribuser.ru/xml/fictionbook/2.0";
+    private static readonly XNamespace Link = "http://www.w3.org/1999/xlink";
     private static readonly XNamespace Container = "urn:oasis:names:tc:opendocument:xmlns:container";
     private static readonly SemaphoreSlim PublicationGate = new(1, 1);
     private static readonly UTF8Encoding Utf8 = new(false, true);
@@ -35,19 +36,7 @@ public static class BookExporter
             throw new ArgumentOutOfRangeException(nameof(format));
         if (string.IsNullOrWhiteSpace(outputDirectory))
             throw new ArgumentException("Не выбрана папка сохранения.", nameof(outputDirectory));
-        if (string.IsNullOrWhiteSpace(book.Title) || book.PageCount < 1 || book.Paragraphs is null ||
-            book.Paragraphs.Count == 0 || !book.Paragraphs.Any(p => !string.IsNullOrWhiteSpace(p)))
-            throw new InvalidDataException("Нельзя экспортировать пустой или незавершённый рассказ.");
-        if (book.SourceUrl is null || !book.SourceUrl.IsAbsoluteUri || book.SourceUrl.Scheme is not ("http" or "https"))
-            throw new InvalidDataException("Источник должен быть HTTP- или HTTPS-ссылкой.");
-        var paragraphs = book.Paragraphs.ToArray();
-        foreach (string? value in paragraphs.Prepend(book.Title).Prepend(book.Author ?? ""))
-        {
-            token.ThrowIfCancellationRequested();
-            if (value is null) throw new InvalidDataException("В тексте обнаружен пустой элемент.");
-            XmlConvert.VerifyXmlChars(value);
-        }
-        book = book with { Paragraphs = paragraphs };
+        book = Snapshot(book, token);
         string directory = Path.GetFullPath(outputDirectory);
         token.ThrowIfCancellationRequested();
         Directory.CreateDirectory(directory);
@@ -90,6 +79,61 @@ public static class BookExporter
             catch (UnauthorizedAccessException) { }
         }
     }
+
+    private static BookDocument Snapshot(BookDocument book, CancellationToken token)
+    {
+        if (string.IsNullOrWhiteSpace(book.Title) || book.PageCount < 1 || book.Paragraphs is null ||
+            book.Paragraphs.Count == 0 || !book.Paragraphs.Any(p => !string.IsNullOrWhiteSpace(p)))
+            throw new InvalidDataException("Нельзя экспортировать пустой или незавершённый рассказ.");
+        VerifySource(book.SourceUrl);
+        var paragraphs = book.Paragraphs.ToArray();
+        VerifyText(paragraphs.Prepend(book.Title).Prepend(book.Author ?? ""), token);
+        BookChapter[]? chapters = null;
+        if (book.Chapters is not null)
+        {
+            if (book.Chapters.Count == 0) throw new InvalidDataException("В книге не указаны главы.");
+            chapters = book.Chapters.Select(chapter =>
+            {
+                token.ThrowIfCancellationRequested();
+                if (chapter is null || string.IsNullOrWhiteSpace(chapter.Title) || chapter.Paragraphs is null ||
+                    chapter.Paragraphs.Count == 0 || !chapter.Paragraphs.Any(p => !string.IsNullOrWhiteSpace(p)))
+                    throw new InvalidDataException("Глава должна содержать название и текст.");
+                VerifySource(chapter.SourceUrl);
+                var text = chapter.Paragraphs.ToArray();
+                VerifyText(text.Prepend(chapter.Title), token);
+                return chapter with { Paragraphs = Array.AsReadOnly(text) };
+            }).ToArray();
+            if (!paragraphs.SequenceEqual(chapters.SelectMany(chapter => chapter.Paragraphs), StringComparer.Ordinal))
+                throw new InvalidDataException("Общий текст книги не соответствует тексту и порядку её глав.");
+        }
+        return book with { Paragraphs = Array.AsReadOnly(paragraphs), Chapters = chapters is null ? null : Array.AsReadOnly(chapters) };
+    }
+
+    private static void VerifySource(Uri? source)
+    {
+        if (source is null || !source.IsAbsoluteUri || source.Scheme is not ("http" or "https"))
+            throw new InvalidDataException("Источник должен быть HTTP- или HTTPS-ссылкой.");
+        XmlConvert.VerifyXmlChars(source.AbsoluteUri);
+    }
+
+    private static void VerifyText(IEnumerable<string?> values, CancellationToken token)
+    {
+        foreach (string? value in values)
+        {
+            token.ThrowIfCancellationRequested();
+            if (value is null) throw new InvalidDataException("В тексте обнаружен пустой элемент.");
+            XmlConvert.VerifyXmlChars(value);
+        }
+    }
+
+    private sealed record ContentSection(string Id, string Href, string Title, Uri? SourceUrl, IReadOnlyList<string> Paragraphs);
+
+    private static ContentSection[] ContentSections(BookDocument book) => book.Chapters is null
+        ? [new("text", "text.xhtml", "Текст рассказа", null, book.Paragraphs)]
+        : book.Chapters.Select((chapter, index) => new ContentSection(
+            "chapter" + (index + 1).ToString("D4", CultureInfo.InvariantCulture),
+            "chapter" + (index + 1).ToString("D4", CultureInfo.InvariantCulture) + ".xhtml",
+            chapter.Title, chapter.SourceUrl, chapter.Paragraphs)).ToArray();
 
     private sealed record StagedFile(string Path, string Extension, long Length, string Hash)
     {
@@ -198,12 +242,8 @@ public static class BookExporter
         titleBody.Add(new XElement(Html + "p", "Источник: ", new XElement(Html + "a",
             new XAttribute("href", book.SourceUrl.AbsoluteUri), book.SourceUrl.AbsoluteUri)));
         titleBody.Add(P($"Загружено страниц источника: {book.PageCount}"));
-        var text = new XElement(Html + "section", new XAttribute("id", "text"), new XElement(Html + "h1", "Текст рассказа"));
-        foreach (string paragraph in book.Paragraphs)
-        {
-            token.ThrowIfCancellationRequested();
-            text.Add(P(paragraph));
-        }
+        var sections = ContentSections(book);
+        if (book.Chapters is not null) titleBody.Add(P($"Глав: {sections.Length}"));
         var metadata = new XElement(Opf + "metadata", new XAttribute(XNamespace.Xmlns + "dc", Dc.NamespaceName),
             new XElement(Dc + "identifier", new XAttribute("id", "book-id"), uid),
             new XElement(Dc + "title", book.Title), new XElement(Dc + "language", "ru"),
@@ -214,18 +254,24 @@ public static class BookExporter
         XElement Item(string id, string href, string type, string? properties = null) => new(Opf + "item",
             new XAttribute("id", id), new XAttribute("href", href), new XAttribute("media-type", type),
             properties is null ? null : new XAttribute("properties", properties));
+        var manifest = new XElement(Opf + "manifest", Item("title", "title.xhtml", "application/xhtml+xml"),
+            sections.Select(section => Item(section.Id, section.Href, "application/xhtml+xml")),
+            Item("nav", "nav.xhtml", "application/xhtml+xml", "nav"), Item("ncx", "toc.ncx", "application/x-dtbncx+xml"));
+        var spine = new XElement(Opf + "spine", new XAttribute("toc", "ncx"),
+            new XElement(Opf + "itemref", new XAttribute("idref", "title")));
+        // Multi-part books expose their chapter list in ordinary reading order,
+        // as well as through the reader's EPUB/NCX navigation controls.
+        if (book.Chapters is not null) spine.Add(new XElement(Opf + "itemref", new XAttribute("idref", "nav")));
+        spine.Add(sections.Select(section => new XElement(Opf + "itemref", new XAttribute("idref", section.Id))));
         var package = new XDocument(new XElement(Opf + "package", new XAttribute("version", "3.0"),
-            new XAttribute("unique-identifier", "book-id"), metadata,
-            new XElement(Opf + "manifest", Item("title", "title.xhtml", "application/xhtml+xml"),
-                Item("text", "text.xhtml", "application/xhtml+xml"), Item("nav", "nav.xhtml", "application/xhtml+xml", "nav"),
-                Item("ncx", "toc.ncx", "application/x-dtbncx+xml")),
-            new XElement(Opf + "spine", new XAttribute("toc", "ncx"),
-                new XElement(Opf + "itemref", new XAttribute("idref", "title")),
-                new XElement(Opf + "itemref", new XAttribute("idref", "text")))));
+            new XAttribute("unique-identifier", "book-id"), metadata, manifest, spine));
+        var navigationSections = book.Chapters is null
+            ? new[] { new ContentSection("title", "title.xhtml", book.Title, null, Array.Empty<string>()) }.Concat(sections).ToArray()
+            : sections;
         var navigation = HtmlDocument("Оглавление", new XElement(Html + "nav", new XAttribute(Epub + "type", "toc"),
             new XAttribute("id", "toc"), new XElement(Html + "h1", "Оглавление"),
-            new XElement(Html + "ol", new XElement(Html + "li", new XElement(Html + "a", new XAttribute("href", "title.xhtml"), book.Title)),
-                new XElement(Html + "li", new XElement(Html + "a", new XAttribute("href", "text.xhtml"), "Текст рассказа")))));
+            new XElement(Html + "ol", navigationSections.Select(section => new XElement(Html + "li",
+                new XElement(Html + "a", new XAttribute("href", section.Href), section.Title))))));
         XElement NcxMeta(string name, string content) => new(Ncx + "meta", new XAttribute("name", name), new XAttribute("content", content));
         XElement Point(string id, string href, string label, int order) => new(Ncx + "navPoint", new XAttribute("id", id),
             new XAttribute("playOrder", order), new XElement(Ncx + "navLabel", new XElement(Ncx + "text", label)),
@@ -234,7 +280,8 @@ public static class BookExporter
             new XElement(Ncx + "head", NcxMeta("dtb:uid", uid), NcxMeta("dtb:depth", "1"),
                 NcxMeta("dtb:totalPageCount", "0"), NcxMeta("dtb:maxPageNumber", "0")),
             new XElement(Ncx + "docTitle", new XElement(Ncx + "text", book.Title)),
-            new XElement(Ncx + "navMap", Point("title", "title.xhtml", book.Title, 1), Point("text", "text.xhtml", "Текст рассказа", 2))));
+            new XElement(Ncx + "navMap", navigationSections.Select((section, index) =>
+                Point(section.Id, section.Href, section.Title, index + 1)))));
         var container = new XDocument(new XElement(Container + "container", new XAttribute("version", "1.0"),
             new XElement(Container + "rootfiles", new XElement(Container + "rootfile", new XAttribute("full-path", "EPUB/package.opf"),
                 new XAttribute("media-type", "application/oebps-package+xml")))));
@@ -254,7 +301,23 @@ public static class BookExporter
             Add("EPUB/nav.xhtml", navigation);
             Add("EPUB/toc.ncx", ncx);
             Add("EPUB/title.xhtml", HtmlDocument(book.Title, titleBody.ToArray()));
-            Add("EPUB/text.xhtml", HtmlDocument("Текст рассказа", text));
+            foreach (var section in sections)
+            {
+                var text = new XElement(Html + "section", new XAttribute("id", section.Id));
+                var heading = new XElement(Html + "h1", section.Title);
+                if (section.SourceUrl is null) text.Add(heading);
+                else text.Add(new XElement(Html + "header", heading, new XElement(Html + "a",
+                    new XAttribute("href", section.SourceUrl.AbsoluteUri), "Источник главы")));
+                foreach (string paragraph in section.Paragraphs)
+                {
+                    token.ThrowIfCancellationRequested();
+                    text.Add(P(paragraph));
+                }
+                var document = HtmlDocument(section.Title, text);
+                if (section.SourceUrl is not null) document.Root!.Element(Html + "head")!.Add(new XElement(Html + "meta",
+                    new XAttribute("name", "dc.source"), new XAttribute("content", section.SourceUrl.AbsoluteUri)));
+                Add("EPUB/" + section.Href, document);
+            }
         }
         file.Flush(flushToDisk: true);
     }
@@ -264,21 +327,30 @@ public static class BookExporter
         XElement Author(string? value) => new(Fb + "author", new XElement(Fb + "nickname",
             string.IsNullOrWhiteSpace(value) ? "Неизвестный автор" : value));
         string date = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        var section = new XElement(Fb + "section", new XAttribute("id", "text"),
-            new XElement(Fb + "title", new XElement(Fb + "p", "Текст рассказа")));
-        foreach (string paragraph in book.Paragraphs)
+        var sections = ContentSections(book).Select(section =>
         {
-            token.ThrowIfCancellationRequested();
-            section.Add(new XElement(Fb + "p", paragraph));
-        }
+            var element = new XElement(Fb + "section", new XAttribute("id", section.Id),
+                new XElement(Fb + "title", new XElement(Fb + "p", section.Title)));
+            if (section.SourceUrl is not null) element.Add(new XElement(Fb + "annotation", new XElement(Fb + "p",
+                new XElement(Fb + "a", new XAttribute(Link + "href", section.SourceUrl.AbsoluteUri), "Источник главы"))));
+            foreach (string paragraph in section.Paragraphs)
+            {
+                token.ThrowIfCancellationRequested();
+                element.Add(new XElement(Fb + "p", paragraph));
+            }
+            return element;
+        }).ToArray();
         var document = new XDocument(new XDeclaration("1.0", "utf-8", null), new XElement(Fb + "FictionBook",
+            book.Chapters is null ? null : new XAttribute(XNamespace.Xmlns + "l", Link.NamespaceName),
             new XElement(Fb + "description", new XElement(Fb + "title-info", new XElement(Fb + "genre", "unrecognised"),
                 Author(book.Author), new XElement(Fb + "book-title", book.Title), new XElement(Fb + "lang", "ru")),
                 new XElement(Fb + "document-info", Author("Text Downloader"), new XElement(Fb + "program-used", "Text Downloader"),
                     new XElement(Fb + "date", new XAttribute("value", date), date),
-                    new XElement(Fb + "src-url", book.SourceUrl.AbsoluteUri), new XElement(Fb + "id", Identifier(book)),
+                    new XElement(Fb + "src-url", book.SourceUrl.AbsoluteUri),
+                    book.Chapters?.Select(chapter => new XElement(Fb + "src-url", chapter.SourceUrl.AbsoluteUri)),
+                    new XElement(Fb + "id", Identifier(book)),
                     new XElement(Fb + "version", "1.0"))),
-            new XElement(Fb + "body", new XElement(Fb + "title", new XElement(Fb + "p", book.Title)), section)));
+            new XElement(Fb + "body", new XElement(Fb + "title", new XElement(Fb + "p", book.Title)), sections)));
         using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
         WriteXml(stream, document);
         stream.Flush(flushToDisk: true);
@@ -303,7 +375,11 @@ public static class BookExporter
                 throw new InvalidDataException("Некорректный EPUB mimetype.");
         }
         using var zip = ZipFile.OpenRead(path);
-        if (zip.Entries.Count != 7 || zip.Entries[0].FullName != "mimetype")
+        var sections = ContentSections(book);
+        var expectedFiles = new[] { "mimetype", "META-INF/container.xml", "EPUB/package.opf", "EPUB/nav.xhtml", "EPUB/toc.ncx", "EPUB/title.xhtml" }
+            .Concat(sections.Select(section => "EPUB/" + section.Href)).ToHashSet(StringComparer.Ordinal);
+        if (zip.Entries.Count != expectedFiles.Count || zip.Entries[0].FullName != "mimetype" ||
+            !expectedFiles.SetEquals(zip.Entries.Select(entry => entry.FullName)))
             throw new InvalidDataException("Неверный состав EPUB.");
         using (var mime = new StreamReader(zip.Entries[0].Open(), Utf8))
             if (mime.ReadToEnd() != "application/epub+zip") throw new InvalidDataException("Неверный EPUB mimetype.");
@@ -317,16 +393,62 @@ public static class BookExporter
             throw new InvalidDataException("Неверный путь EPUB package.");
         var package = Read("EPUB/package.opf");
         var manifest = package.Descendants(Opf + "item").ToDictionary(item => item.Attribute("id")!.Value);
+        var expectedManifest = new Dictionary<string, string>(StringComparer.Ordinal)
+            { ["title"] = "title.xhtml", ["nav"] = "nav.xhtml", ["ncx"] = "toc.ncx" };
+        foreach (var section in sections) expectedManifest.Add(section.Id, section.Href);
+        if (package.Root?.Attribute("version")?.Value != "3.0" || manifest.Count != expectedManifest.Count ||
+            expectedManifest.Any(item => !manifest.TryGetValue(item.Key, out var actual) || actual.Attribute("href")?.Value != item.Value))
+            throw new InvalidDataException("Неверный EPUB manifest.");
         foreach (var item in manifest.Values)
             if (zip.GetEntry("EPUB/" + item.Attribute("href")?.Value) is null) throw new InvalidDataException("EPUB manifest ссылается на отсутствующий файл.");
-        foreach (var item in package.Descendants(Opf + "itemref"))
-            if (!manifest.ContainsKey(item.Attribute("idref")?.Value ?? "")) throw new InvalidDataException("Неверный EPUB spine.");
-        foreach (var link in Read("EPUB/nav.xhtml").Descendants(Html + "a"))
-            if (zip.GetEntry("EPUB/" + link.Attribute("href")?.Value) is null) throw new InvalidDataException("Неверная ссылка в оглавлении EPUB.");
-        foreach (var link in Read("EPUB/toc.ncx").Descendants(Ncx + "content"))
-            if (zip.GetEntry("EPUB/" + link.Attribute("src")?.Value) is null) throw new InvalidDataException("Неверная ссылка в NCX.");
-        if (Read("EPUB/title.xhtml").Descendants(Html + "h1").Single().Value != book.Title ||
-            !Read("EPUB/text.xhtml").Descendants(Html + "p").Select(p => p.Value).SequenceEqual(book.Paragraphs))
+        var expectedSpine = new[] { "title" }.Concat(book.Chapters is null ? Array.Empty<string>() : new[] { "nav" })
+            .Concat(sections.Select(section => section.Id));
+        if (!package.Descendants(Opf + "itemref").Select(item => item.Attribute("idref")?.Value).SequenceEqual(expectedSpine) ||
+            manifest["nav"].Attribute("properties")?.Value != "nav" || manifest["ncx"].Attribute("media-type")?.Value != "application/x-dtbncx+xml")
+            throw new InvalidDataException("Неверный порядок EPUB spine или оглавления.");
+        if (package.Descendants(Dc + "title").Single().Value != book.Title ||
+            package.Descendants(Dc + "source").Single().Value != book.SourceUrl.AbsoluteUri ||
+            package.Descendants(Dc + "language").Single().Value != "ru" ||
+            package.Descendants(Dc + "identifier").Single().Value != Identifier(book) ||
+            !package.Descendants(Dc + "creator").Select(author => author.Value).SequenceEqual(
+                string.IsNullOrWhiteSpace(book.Author) ? Array.Empty<string>() : new[] { book.Author }))
+            throw new InvalidDataException("EPUB не сохранил метаданные книги.");
+        var expectedNavigation = book.Chapters is null
+            ? new[] { new ContentSection("title", "title.xhtml", book.Title, null, Array.Empty<string>()) }.Concat(sections).ToArray()
+            : sections;
+        var nav = Read("EPUB/nav.xhtml");
+        var links = nav.Descendants(Html + "a").ToArray();
+        var toc = nav.Descendants(Html + "nav").Single();
+        if (toc.Attribute(Epub + "type")?.Value != "toc" || toc.Element(Html + "ol") is null ||
+            !links.Select(link => link.Attribute("href")?.Value).SequenceEqual(expectedNavigation.Select(section => section.Href)) ||
+            !links.Select(link => link.Value).SequenceEqual(expectedNavigation.Select(section => section.Title)))
+            throw new InvalidDataException("EPUB не сохранил порядок и названия глав в оглавлении.");
+        var ncx = Read("EPUB/toc.ncx");
+        var points = ncx.Descendants(Ncx + "navPoint").ToArray();
+        if (!points.Select(point => point.Element(Ncx + "content")?.Attribute("src")?.Value).SequenceEqual(expectedNavigation.Select(section => section.Href)) ||
+            !points.Select(point => point.Element(Ncx + "navLabel")?.Element(Ncx + "text")?.Value).SequenceEqual(expectedNavigation.Select(section => section.Title)) ||
+            !points.Select(point => point.Attribute("playOrder")?.Value).SequenceEqual(Enumerable.Range(1, points.Length).Select(number => number.ToString(CultureInfo.InvariantCulture))) ||
+            !points.Select(point => point.Attribute("id")?.Value).SequenceEqual(expectedNavigation.Select(section => section.Id)) ||
+            ncx.Descendants(Ncx + "docTitle").Single().Element(Ncx + "text")?.Value != book.Title ||
+            ncx.Descendants(Ncx + "meta").Single(meta => meta.Attribute("name")?.Value == "dtb:uid").Attribute("content")?.Value != Identifier(book))
+            throw new InvalidDataException("Неверное оглавление NCX.");
+        var fullText = new List<string>();
+        foreach (var section in sections)
+        {
+            var document = Read("EPUB/" + section.Href);
+            var content = document.Root!.Element(Html + "body")!.Elements(Html + "section").Single();
+            var paragraphs = content.Elements(Html + "p").Select(p => p.Value).ToArray();
+            if (document.Root.Element(Html + "head")?.Element(Html + "title")?.Value != section.Title ||
+                content.Attribute("id")?.Value != section.Id || content.Descendants(Html + "h1").Single().Value != section.Title ||
+                !paragraphs.SequenceEqual(section.Paragraphs))
+                throw new InvalidDataException("EPUB не сохранил название или полный текст главы.");
+            if (section.SourceUrl is not null &&
+                (document.Root.Element(Html + "head")?.Elements(Html + "meta").Single(meta => meta.Attribute("name")?.Value == "dc.source").Attribute("content")?.Value != section.SourceUrl.AbsoluteUri ||
+                 content.Element(Html + "header")?.Element(Html + "a")?.Attribute("href")?.Value != section.SourceUrl.AbsoluteUri))
+                throw new InvalidDataException("EPUB не сохранил исходную ссылку главы.");
+            fullText.AddRange(paragraphs);
+        }
+        if (Read("EPUB/title.xhtml").Descendants(Html + "h1").Single().Value != book.Title || !fullText.SequenceEqual(book.Paragraphs))
             throw new InvalidDataException("EPUB не сохранил полный исходный текст.");
     }
 
@@ -335,10 +457,30 @@ public static class BookExporter
         token.ThrowIfCancellationRequested();
         using var stream = File.OpenRead(path);
         var document = ReadXml(stream);
+        var expected = ContentSections(book);
+        var body = document.Root?.Element(Fb + "body");
+        var sections = body?.Elements(Fb + "section").ToArray() ?? [];
+        var sources = new[] { book.SourceUrl.AbsoluteUri }.Concat(book.Chapters?.Select(chapter => chapter.SourceUrl.AbsoluteUri) ?? Array.Empty<string>());
         if (document.Root?.Name != Fb + "FictionBook" ||
             document.Descendants(Fb + "book-title").Single().Value != book.Title ||
-            document.Descendants(Fb + "src-url").Single().Value != book.SourceUrl.AbsoluteUri ||
-            !document.Descendants(Fb + "section").Single().Elements(Fb + "p").Select(p => p.Value).SequenceEqual(book.Paragraphs))
+            document.Descendants(Fb + "lang").Single().Value != "ru" ||
+            document.Descendants(Fb + "title-info").Single().Element(Fb + "author")?.Element(Fb + "nickname")?.Value !=
+                (string.IsNullOrWhiteSpace(book.Author) ? "Неизвестный автор" : book.Author) ||
+            document.Descendants(Fb + "id").Single().Value != Identifier(book) ||
+            body?.Element(Fb + "title")?.Element(Fb + "p")?.Value != book.Title ||
+            !document.Descendants(Fb + "src-url").Select(source => source.Value).SequenceEqual(sources) ||
+            sections.Length != expected.Length ||
+            !sections.Select(section => section.Attribute("id")?.Value).SequenceEqual(expected.Select(section => section.Id)) ||
+            !sections.Select(section => section.Element(Fb + "title")?.Element(Fb + "p")?.Value).SequenceEqual(expected.Select(section => section.Title)) ||
+            !sections.SelectMany(section => section.Elements(Fb + "p")).Select(p => p.Value).SequenceEqual(book.Paragraphs))
             throw new InvalidDataException("FB2 не сохранил полный исходный текст.");
+        for (int index = 0; index < sections.Length; index++)
+        {
+            token.ThrowIfCancellationRequested();
+            if (!sections[index].Elements(Fb + "p").Select(p => p.Value).SequenceEqual(expected[index].Paragraphs) ||
+                (expected[index].SourceUrl is not null && sections[index].Element(Fb + "annotation")?.Element(Fb + "p")?
+                    .Element(Fb + "a")?.Attribute(Link + "href")?.Value != expected[index].SourceUrl!.AbsoluteUri))
+                throw new InvalidDataException("FB2 не сохранил текст или ссылку отдельной главы.");
+        }
     }
 }

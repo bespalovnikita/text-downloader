@@ -37,6 +37,9 @@ public sealed class StoryDownloader
         IProgress<DownloadProgress>? progress, CancellationToken cancellationToken)
     {
         if (MaxPages < 1) throw new ArgumentOutOfRangeException(nameof(MaxPages));
+        if (_source is IBookStorySource bookSource)
+            return await bookSource.DownloadBookAsync(url, confirmAdult, refresh, _cacheDirectory,
+                progress, cancellationToken).ConfigureAwait(false);
         var first = _source.NormalizeToFirstPage(url);
         try { return await DownloadAttemptAsync(first, confirmAdult, refresh, progress, cancellationToken).ConfigureAwait(false); }
         catch (SefanStoryScopeMismatchException) when (!SefanSource.IsNeutralGenre(first))

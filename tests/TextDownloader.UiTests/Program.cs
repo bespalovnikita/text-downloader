@@ -21,8 +21,10 @@ internal static class Program
                 Directory.CreateDirectory(Root);
                 await RunScenariosAsync();
                 await UpdateUiTests.RunAsync(Path.Combine(Root, "updates"));
+                await BestweaponUiTests.RunAsync(Path.Combine(Root, "bestweapon"));
                 Console.WriteLine("PASS: real WPF add/preview/pause/resume/cancel/retry/export/history/restore/corrupt-profile scenarios");
                 Console.WriteLine("PASS: real WPF update dialog, version checks, progress/cancel, busy/read-only guards and saved-state handoff");
+                Console.WriteLine("PASS: real WPF Bestweapon post preview, whole-book export with chapter navigation and restored history");
             }
             catch (Exception error) { Console.Error.WriteLine(error); code = 1; }
             finally
