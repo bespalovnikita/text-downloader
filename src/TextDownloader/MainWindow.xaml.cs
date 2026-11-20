@@ -282,6 +282,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     Log($"Готово: {item.Title}; {result.Book.PageCount} страниц; " + string.Join("; ", result.Files));
                     if (SelectedItem == item)
                     {
+                        // A slow network preview must not replace the completed
+                        // book after a fast export from the page cache.
+                        _previewStop?.Cancel();
                         PreviewTitle = result.Book.Title;
                         PreviewMetadata = (result.Book.Author ?? "Автор не указан") + $" · страниц: {result.Book.PageCount}";
                         PreviewText = string.Join("\n\n", result.Book.Paragraphs.Take(12));

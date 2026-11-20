@@ -111,6 +111,20 @@ internal static class Program
         Assert(restored.Items.Count == 4 && restored.History.Count == 2, "Queue/history did not restore");
         Assert(!restored.IsBusy && restored.Items[3].Status == QueueStatus.Queued, "Restore started a download");
         Assert(restored.OutputDirectory == Path.Combine(Root, "books") && restored.ConfirmAdult, "Settings did not restore");
+
+        // A cached export can beat a slow preview request. Completion must cancel
+        // that request and keep the ready-book state in the real preview controls.
+        restored.SelectedItem = restored.Items[0];
+        await restored.ActivePreview.WaitAsync(TimeSpan.FromSeconds(10));
+        network.HoldSecondPage = false;
+        network.HoldNextFirstPage = true;
+        Click(restored, "PreviewButton");
+        await network.SlowPreviewStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Click(restored, "RepeatSelectedButton");
+        Click(restored, "StartButton");
+        await restored.ActiveSession.WaitAsync(TimeSpan.FromSeconds(10));
+        await restored.ActivePreview.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert(restored.PreviewStatus.StartsWith("Книга готова", StringComparison.Ordinal), "Slow preview replaced completed-book state");
         await CloseAsync(restored);
 
         string badProfile = Path.Combine(Root, "corrupt");
@@ -150,9 +164,10 @@ internal static class Program
 
     private sealed class FakeNetwork
     {
-        public bool HoldSecondPage, RequireAdult;
+        public bool HoldSecondPage, RequireAdult, HoldNextFirstPage;
         public int PageOneCalls;
         public TaskCompletionSource<bool> SecondPageStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<bool> SlowPreviewStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
     private sealed class FakeSource(FakeNetwork network) : IStorySource
     {
@@ -162,6 +177,12 @@ internal static class Program
         {
             if (network.RequireAdult && !confirmAdult) throw new AgeConfirmationRequiredException();
             bool second = uri.AbsolutePath.EndsWith("_1-2.html");
+            if (!second && network.HoldNextFirstPage)
+            {
+                network.HoldNextFirstPage = false;
+                network.SlowPreviewStarted.TrySetResult(true);
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+            }
             if (second)
             {
                 network.SecondPageStarted.TrySetResult(true);
