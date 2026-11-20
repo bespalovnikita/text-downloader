@@ -171,10 +171,38 @@ internal static class AppUpdateBootstrap
         {
             try { owner = Process.GetProcessById(id); }
             catch (ArgumentException) { return; }
-            if (owner.StartTime.ToUniversalTime().Ticks != startTicks) return;
-            await owner.WaitForExitAsync(cancellationToken).WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (owner.StartTime.ToUniversalTime().Ticks != startTicks) return;
+                await owner.WaitForExitAsync(cancellationToken).WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception error) when (
+                (error is ArgumentException or InvalidOperationException ||
+                 error is System.ComponentModel.Win32Exception { NativeErrorCode: 87 }) &&
+                OriginalOwnerHasExited(id, startTicks))
+            {
+                // GetProcessById does not pin the process handle: it can exit
+                // before StartTime/WaitForExitAsync opens that handle. Confirm
+                // disappearance or PID reuse; access errors remain failures.
+            }
         }
         finally { owner?.Dispose(); }
+    }
+
+    private static bool OriginalOwnerHasExited(int id, long startTicks)
+    {
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            try
+            {
+                using var observed = Process.GetProcessById(id);
+                return observed.HasExited || observed.StartTime.ToUniversalTime().Ticks != startTicks;
+            }
+            catch (ArgumentException) { return true; }
+            catch (System.ComponentModel.Win32Exception error) when (error.NativeErrorCode == 87) { return true; }
+            catch (InvalidOperationException) { } // Retry a handle-opening race with a fresh Process.
+        }
+        return false;
     }
 
     internal static Process Restart(string directory, string? resultFile = null, string? profileDirectory = null)

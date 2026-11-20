@@ -36,6 +36,7 @@ internal static class UpdateTests
         CancellationDoesNotInstall();
         FaultRollsBackExactOldFiles();
         RecoveryNeverOverwritesForeignChanges();
+        ForwardInstallNeverOverwritesForeignChanges();
         ReparsePointsAreRejected();
         LockedWindowsFileRollsBack();
         await CrashRecoveryAndOwnerValidationAsync();
@@ -222,8 +223,41 @@ internal static class UpdateTests
         var original = Snapshot(f.Target);
         using var locked = new FileStream(Path.Combine(f.Target, "TextDownloader.Core.dll"), FileMode.Open, FileAccess.Read, FileShare.Read);
         using var prepared = f.Prepare();
-        Throws<IOException>(() => AppUpdateInstaller.Apply(prepared));
+        Exception? rejection = null;
+        try { AppUpdateInstaller.Apply(prepared); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { rejection = error; }
+        Assert(rejection is not null, "A Windows sharing lock did not reject installation.");
+        // Windows may map a blocked replacement to access denied rather than an
+        // IOException. Accept only the relevant native error codes, never a
+        // generic failure or an AggregateException indicating failed rollback.
+        int code = rejection!.HResult & 0xffff;
+        Assert(code is 5 or 32 or 33, "Unexpected Windows file failure: " + rejection);
         SameSnapshot(original, f.Target, "A Windows sharing lock caused partial installation.");
+        Assert(AppUpdateInstaller.FindPending(f.Target) is null, "The sharing-lock rollback left a pending installation.");
+    }
+
+    private static void ForwardInstallNeverOverwritesForeignChanges()
+    {
+        // Continue after the external edit: the *forward* delete/replace guard
+        // must reject it before it can disappear into a successful upgrade.
+        foreach (string relative in new[] { "docs/old.md", "TextDownloader.exe" })
+        {
+            using var f = new Fixture();
+            var original = Snapshot(f.Target);
+            using var prepared = f.Prepare();
+            string path = Path.Combine(f.Target, relative);
+            byte[] foreign = Encoding.UTF8.GetBytes("external edit before forward publication");
+            Throws<AggregateException>(() => AppUpdateInstaller.Apply(prepared, number =>
+            {
+                if (number == 1) File.WriteAllBytes(path, foreign);
+            }));
+            Bytes(foreign, File.ReadAllBytes(path), "Forward installation overwrote/deleted externally changed bytes: " + relative);
+            Assert(File.Exists(Path.Combine(f.Target, PointerName)) && Directory.Exists(prepared.BackupDirectory),
+                "Forward ownership failure discarded recovery data.");
+            File.WriteAllBytes(path, OldFiles[relative]);
+            AppUpdateInstaller.Recover(prepared);
+            SameSnapshot(original, f.Target, "Recovery after a blocked forward mutation did not restore the original installation.");
+        }
     }
 
     private static async Task CrashRecoveryAndOwnerValidationAsync()
