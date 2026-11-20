@@ -33,7 +33,7 @@ public static class UpdateClient
         try
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(45) };
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("TextDownloader/0.1.0");
+            http.DefaultRequestHeaders.UserAgent.ParseAdd($"TextDownloader/{Assembly.GetExecutingAssembly().GetName().Version}");
             http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
             using var response = await http.GetAsync($"https://api.github.com/repos/{Repository}/releases/latest", token);
             if (response.StatusCode == HttpStatusCode.NotFound)

@@ -34,7 +34,28 @@ function Invoke-Gh([string[]]$Arguments) {
 function Get-Release([string]$Reference) {
     $result = & gh api "repos/$Repository/releases/$Reference" 2>&1
     if ($LASTEXITCODE -ne 0) {
-        if (($result -join ' ') -match 'HTTP 404') { return $null }
+        if (($result -join ' ') -match 'HTTP 404') {
+            if (-not $Reference.StartsWith('tags/', [StringComparison]::Ordinal)) { return $null }
+            # The tag endpoint can hide drafts, even from the token that just
+            # created them. The authenticated release list includes owned drafts.
+            # Enumerate all pages and match the exact tag; never create a second
+            # draft merely because /releases/tags/{tag} returned 404.
+            $wantedTag = $Reference.Substring(5)
+            $listed = Invoke-Gh -Arguments @('api', '--paginate', '--slurp', "repos/$Repository/releases?per_page=100")
+            $pages = $listed | ConvertFrom-Json -NoEnumerate
+            $candidates = @(
+                foreach ($page in $pages) {
+                    foreach ($candidate in $page) {
+                        if ([string]::Equals([string]$candidate.tag_name, $wantedTag, [StringComparison]::Ordinal)) {
+                            $candidate
+                        }
+                    }
+                }
+            )
+            if ($candidates.Count -gt 1) { throw "Найдено несколько выпусков с тегом $wantedTag. Они оставлены без изменений." }
+            if ($candidates.Count -eq 1) { return $candidates[0] }
+            return $null
+        }
         throw "Не удалось проверить существующий выпуск: $($result -join [Environment]::NewLine)"
     }
     return ($result -join [Environment]::NewLine | ConvertFrom-Json)
@@ -54,6 +75,9 @@ try {
         [void](Invoke-Gh -Arguments @('release', 'create', $Tag, '--repo', $Repository, '--verify-tag', '--target', $CommitSha,
             '--draft', '--title', "Text Downloader $Tag", '--notes-file', $notes))
         $release = Get-Release "tags/$Tag"
+        if (-not $release -or -not $release.draft -or -not ([string]$release.body).Contains($marker)) {
+            throw 'Не удалось подтвердить созданный собственный черновик. Загрузка файлов и публикация остановлены.'
+        }
     }
     foreach ($asset in $release.assets) {
         if ($asset.name -notin $names) { throw "Неожиданный файл в выпуске: $($asset.name). Выпуск не изменён." }
