@@ -14,6 +14,7 @@ $root = Split-Path -Parent $PSScriptRoot
 $project = Join-Path $root 'src/TextDownloader/TextDownloader.csproj'
 $coreTests = Join-Path $root 'tests/TextDownloader.Core.Tests/TextDownloader.Core.Tests.csproj'
 $uiTests = Join-Path $root 'tests/TextDownloader.UiTests/TextDownloader.UiTests.csproj'
+$updateProcessTests = Join-Path $root 'tests/TextDownloader.UpdateProcessTests/TextDownloader.UpdateProcessTests.csproj'
 
 function Invoke-DotNet([string[]]$Arguments) {
     & dotnet @Arguments
@@ -62,42 +63,15 @@ try {
             Invoke-DotNet -Arguments @('build', $project, '-c', $Configuration, "-p:Version=$Version")
             Invoke-DotNet -Arguments @('run', '--project', $coreTests, '-c', $Configuration)
             Invoke-DotNet -Arguments @('run', '--project', $uiTests, '-c', $Configuration)
+            Invoke-DotNet -Arguments @('build', $updateProcessTests, '-c', $Configuration)
         }
         'Publish' {
             $output = Resolve-DistPath $OutputDirectory
             $archive = Resolve-DistPath $ArchivePath
             $checksums = Resolve-DistPath $ChecksumPath
-            if (Test-Path -LiteralPath $output) {
-                if ((Get-Item -LiteralPath $output).Attributes -band [IO.FileAttributes]::ReparsePoint) {
-                    throw 'Каталог публикации не должен быть ссылкой.'
-                }
-                Remove-Item -LiteralPath $output -Recurse -Force
-            }
-            Invoke-DotNet -Arguments @('publish', $project, '-c', $Configuration, '-r', 'win-x64', '--self-contained', 'true',
-                "-p:Version=$Version", "-p:FileVersion=$Version.0", "-p:AssemblyVersion=$Version.0",
-                '-p:PublishSingleFile=true', '-p:EnableCompressionInSingleFile=true',
-                '-p:IncludeNativeLibrariesForSelfExtract=true', '-p:DebugType=None', '-p:DebugSymbols=false',
-                '-o', $output)
-            foreach ($name in @('README.md', 'THIRD_PARTY_NOTICES.md')) {
-                Copy-Item -LiteralPath (Join-Path $root $name) -Destination (Join-Path $output $name)
-            }
-            foreach ($name in @('docs', 'third-party')) {
-                Copy-Item -LiteralPath (Join-Path $root $name) -Destination (Join-Path $output $name) -Recurse
-            }
-            $packageFiles = @(
-                Get-ChildItem -LiteralPath $output -Recurse -File | Sort-Object FullName | ForEach-Object {
-                    [ordered]@{
-                        path = [IO.Path]::GetRelativePath($output, $_.FullName).Replace('\', '/')
-                        size = $_.Length
-                        sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-                    }
-                }
-            )
-            [ordered]@{ schema = 1; application = 'TextDownloader'; version = $Version; files = $packageFiles } |
-                ConvertTo-Json -Depth 5 |
-                Set-Content -LiteralPath (Join-Path $output 'windows-package.json') -Encoding utf8NoBOM
-            & (Join-Path $PSScriptRoot 'verify-package.ps1') -Directory $output -Version $Version
+            & (Join-Path $PSScriptRoot 'publish-directory.ps1') -Directory $output -Version $Version -Configuration $Configuration
             & (Join-Path $PSScriptRoot 'published-smoke.ps1') -Directory $output
+            & (Join-Path $PSScriptRoot 'published-update-smoke.ps1') -Directory $output -Configuration $Configuration
             [void][IO.Directory]::CreateDirectory((Split-Path -Parent $archive))
             [void][IO.Directory]::CreateDirectory((Split-Path -Parent $checksums))
             Compress-Archive -Path (Join-Path $output '*') -DestinationPath $archive -Force

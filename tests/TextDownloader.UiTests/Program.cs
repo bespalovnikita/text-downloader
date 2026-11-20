@@ -20,7 +20,9 @@ internal static class Program
             {
                 Directory.CreateDirectory(Root);
                 await RunScenariosAsync();
+                await UpdateUiTests.RunAsync(Path.Combine(Root, "updates"));
                 Console.WriteLine("PASS: real WPF add/preview/pause/resume/cancel/retry/export/history/restore/corrupt-profile scenarios");
+                Console.WriteLine("PASS: real WPF update dialog, version checks, progress/cancel, busy/read-only guards and saved-state handoff");
             }
             catch (Exception error) { Console.Error.WriteLine(error); code = 1; }
             finally

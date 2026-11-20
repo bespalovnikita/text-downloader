@@ -14,6 +14,7 @@ internal static class Program
 
     private static async Task<int> Main(string[] args)
     {
+        if (args.Length > 0 && args[0] == "--update-crash") return UpdateTests.RunCrashChild(args);
         if (args.Length > 0)
         {
             Console.Error.WriteLine("These tests run offline and accept no arguments.");
@@ -33,6 +34,7 @@ internal static class Program
             ("FB2 namespace, metadata and exact Unicode text", Fb2Structure),
             ("Publication uses unique names and preserves third-party files", UniquePublication),
             ("Invalid or cancelled export leaves no partial publication", FailedPublication),
+            ("Application package validation, atomic upgrade, rollback and crash recovery", UpdateTests.RunAsync),
         ];
         int failed = 0;
         foreach (var test in tests)

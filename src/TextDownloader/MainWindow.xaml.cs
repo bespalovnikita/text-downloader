@@ -15,6 +15,8 @@ using System.Windows.Input;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using TextDownloader.Core;
+using TextDownloader.Core.Updates;
+using TextDownloader.Updates;
 using Forms = System.Windows.Forms;
 
 namespace TextDownloader;
@@ -24,6 +26,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly AppStore _store;
     private readonly Func<IStorySource> _sourceFactory;
     private readonly bool _enableTray;
+    private readonly IAppUpdateClient _updateClient;
+    private readonly bool _ownsUpdateClient;
+    private readonly string _updateTargetDirectory;
     private readonly DispatcherTimer _saveTimer = new() { Interval = TimeSpan.FromMilliseconds(600) };
     private readonly TaskCompletionSource<bool> _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly List<string> _journal = new();
@@ -44,6 +49,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public Task ActiveSession => _sessionTask;
     public Task ActivePreview => _previewTask;
     public string ProfileDirectory => _store.DirectoryPath;
+    public UpdateWindow? CurrentUpdateWindow { get; private set; }
+    internal PreparedAppUpdate? PendingAppUpdate { get; private set; }
 
     private QueueItem? _selectedItem;
     public QueueItem? SelectedItem
@@ -52,7 +59,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         set
         {
             if (!Set(ref _selectedItem, value)) return;
-            if (_initialized) _previewTask = PreviewSelectedAsync(value);
+            if (_initialized && !IsUpdating) _previewTask = PreviewSelectedAsync(value);
         }
     }
     private QueueItem? _activeItem;
@@ -61,17 +68,30 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool IsBusy
     {
         get => _isBusy;
-        private set { if (Set(ref _isBusy, value)) { Changed(nameof(CanStart)); Changed(nameof(CanEditSettings)); Changed(nameof(StartLabel)); } }
+        private set { if (Set(ref _isBusy, value)) { Changed(nameof(CanStart)); Changed(nameof(CanEditSettings)); Changed(nameof(StartLabel)); CurrentUpdateWindow?.RefreshInstallEligibility(); } }
     }
-    public bool CanStart => _initialized && !IsBusy && !_closing && _store.CanWrite && !_saveFailed;
-    public bool CanEditSettings => !IsBusy && !_closing;
+    private bool _isUpdating;
+    public bool IsUpdating
+    {
+        get => _isUpdating;
+        private set
+        {
+            if (!Set(ref _isUpdating, value)) return;
+            Changed(nameof(CanStart)); Changed(nameof(CanEditSettings));
+            Changed(nameof(CanReceiveInput)); Changed(nameof(CanOpenUpdates));
+        }
+    }
+    public bool CanStart => _initialized && !IsBusy && !IsUpdating && !_closing && _store.CanWrite && !_saveFailed;
+    public bool CanEditSettings => !IsBusy && !IsUpdating && !_closing;
+    public bool CanReceiveInput => _initialized && !IsUpdating && !_closing;
+    public bool CanOpenUpdates => _initialized && !IsUpdating && !_closing;
     public string StartLabel => Items.Any(q => q.Status == QueueStatus.Paused) ? "▶ Продолжить очередь" : "▶ Скачать очередь";
     public string QueueCountText => $"{Items.Count} · готово {Items.Count(q => q.Status == QueueStatus.Completed)}";
-    public BookFormat Format { get => _settings.Format; set { _settings.Format = value; Changed(); ScheduleSave(); } }
-    public string OutputDirectory { get => _settings.OutputDirectory; set { _settings.OutputDirectory = value; Changed(); ScheduleSave(); } }
-    public bool ConfirmAdult { get => _settings.ConfirmAdult; set { _settings.ConfirmAdult = value; Changed(); ScheduleSave(); } }
-    public bool RefreshCache { get => _settings.RefreshCache; set { _settings.RefreshCache = value; Changed(); ScheduleSave(); } }
-    public bool MinimizeToTray { get => _settings.MinimizeToTray; set { _settings.MinimizeToTray = value; Changed(); ScheduleSave(); } }
+    public BookFormat Format { get => _settings.Format; set { if (IsUpdating) return; _settings.Format = value; Changed(); ScheduleSave(); } }
+    public string OutputDirectory { get => _settings.OutputDirectory; set { if (IsUpdating) return; _settings.OutputDirectory = value; Changed(); ScheduleSave(); } }
+    public bool ConfirmAdult { get => _settings.ConfirmAdult; set { if (IsUpdating) return; _settings.ConfirmAdult = value; Changed(); ScheduleSave(); } }
+    public bool RefreshCache { get => _settings.RefreshCache; set { if (IsUpdating) return; _settings.RefreshCache = value; Changed(); ScheduleSave(); } }
+    public bool MinimizeToTray { get => _settings.MinimizeToTray; set { if (IsUpdating) return; _settings.MinimizeToTray = value; Changed(); ScheduleSave(); } }
     private string _currentStatus = "Добавьте ссылку на страницу чтения Sefan.";
     public string CurrentStatus { get => _currentStatus; private set => Set(ref _currentStatus, value); }
     private string _previewTitle = "Выберите рассказ";
@@ -85,11 +105,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public string JournalText => string.Join(Environment.NewLine, _journal);
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public MainWindow(string profileDirectory, Func<IStorySource>? sourceFactory = null, bool enableTray = true)
+    public MainWindow(string profileDirectory, Func<IStorySource>? sourceFactory = null, bool enableTray = true,
+        IAppUpdateClient? updateClient = null, string? updateTargetDirectory = null)
     {
         _store = new AppStore(profileDirectory);
         _sourceFactory = sourceFactory ?? (() => new SefanSource());
         _enableTray = enableTray;
+        _ownsUpdateClient = updateClient is null;
+        _updateClient = updateClient ?? new UpdateClient();
+        _updateTargetDirectory = Path.GetFullPath(updateTargetDirectory ?? AppContext.BaseDirectory);
         InitializeComponent();
         DataContext = this;
         Items.CollectionChanged += (_, _) => { Changed(nameof(QueueCountText)); Changed(nameof(StartLabel)); ScheduleSave(); };
@@ -121,6 +145,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             _initialized = true;
             Changed(nameof(CanStart));
+            Changed(nameof(CanReceiveInput)); Changed(nameof(CanOpenUpdates));
             _ready.TrySetResult(true);
             if (_enableTray && !_closing) CreateTray();
         }
@@ -140,6 +165,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public async Task AddUrlsAsync(string raw)
     {
         await Ready;
+        if (IsUpdating || _closing) { CurrentStatus = "Добавление ссылок временно недоступно во время обновления."; return; }
         if (raw.Length > 1024 * 1024) { CurrentStatus = "Список ссылок слишком велик (не более 1 МиБ)."; return; }
         var candidates = Regex.Matches(raw, "https?://[^\\s<>\\\"']+", RegexOptions.IgnoreCase).Select(m => m.Value.TrimEnd(')', ',', ';')).ToArray();
         if (candidates.Length == 0) { CurrentStatus = "Вставьте HTTPS-ссылку на страницу рассказа."; return; }
@@ -175,6 +201,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async Task PreviewSelectedAsync(QueueItem? item)
     {
+        if (IsUpdating || _closing) return;
         _previewStop?.Cancel();
         _previewStop?.Dispose();
         _previewStop = new CancellationTokenSource();
@@ -225,6 +252,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         IsBusy = true;
         _sessionTask = RunSessionAsync(pending, Path.GetFullPath(OutputDirectory), Format, ConfirmAdult, RefreshCache, _sessionStop.Token);
         await _sessionTask;
+        CurrentUpdateWindow?.RefreshInstallEligibility();
     }
 
     private async Task RunSessionAsync(QueueItem[] pending, string directory, BookFormat format, bool confirmAdult, bool refresh, CancellationToken token)
@@ -366,7 +394,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         try { await SaveOrThrowAsync(); }
         catch (Exception error) { CurrentStatus = "Не удалось сохранить состояние: " + error.Message; Log(CurrentStatus); }
     }
-    private void ScheduleSave() { if (_initialized && !_closing && _store.CanWrite) { _saveTimer.Stop(); _saveTimer.Start(); } }
+    private void ScheduleSave() { if (_initialized && !_closing && !IsUpdating && _store.CanWrite) { _saveTimer.Stop(); _saveTimer.Start(); } }
 
     private void Log(string message)
     {
@@ -394,13 +422,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void OnCancel(object sender, RoutedEventArgs e) => Cancel();
     private void OnRetry(object sender, RoutedEventArgs e)
     {
+        if (IsUpdating || _closing) return;
         foreach (QueueItem item in Items.Where(q => q.Status is QueueStatus.Failed or QueueStatus.Cancelled)) { item.Status = QueueStatus.Queued; item.Message = "Повторная загрузка готова к запуску."; }
         CurrentStatus = "Нажмите «Скачать очередь», чтобы повторить задания.";
         ScheduleSave();
     }
     private void OnRepeatSelected(object sender, RoutedEventArgs e)
     {
-        if (IsBusy) return;
+        if (IsBusy || IsUpdating || _closing) return;
         var selected = QueueList.SelectedItems.Cast<QueueItem>().ToArray();
         if (selected.Length == 0 && SelectedItem is not null) selected = new[] { SelectedItem };
         foreach (QueueItem item in selected)
@@ -413,6 +442,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
     private void OnRemove(object sender, RoutedEventArgs e)
     {
+        if (IsUpdating || _closing) return;
         var selected = QueueList.SelectedItems.Cast<QueueItem>().ToArray();
         if (selected.Length == 0 && SelectedItem is not null) selected = new[] { SelectedItem };
         foreach (QueueItem item in selected.Where(item => item.Status != QueueStatus.Running)) Items.Remove(item);
@@ -420,11 +450,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
     private void OnClearCompleted(object sender, RoutedEventArgs e)
     {
+        if (IsUpdating || _closing) return;
         foreach (QueueItem item in Items.Where(q => q.Status == QueueStatus.Completed).ToArray()) Items.Remove(item);
         if (SelectedItem is not null && !Items.Contains(SelectedItem)) SelectedItem = null;
     }
     private void OnBrowse(object sender, RoutedEventArgs e)
     {
+        if (!CanEditSettings) return;
         var picker = new OpenFolderDialog { Title = "Папка готовых книг", Multiselect = false };
         if (Directory.Exists(OutputDirectory)) picker.InitialDirectory = OutputDirectory;
         if (picker.ShowDialog(this) == true) OutputDirectory = picker.FolderName;
@@ -436,6 +468,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
     private async Task LoadListAsync(string path)
     {
+        if (IsUpdating || _closing) return;
         try
         {
             if (new FileInfo(path).Length > 1024 * 1024) { CurrentStatus = "Список не должен превышать 1 МиБ."; return; }
@@ -457,7 +490,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         else if (e.Data.GetDataPresent(DataFormats.Text)) await AddUrlsAsync((string)e.Data.GetData(DataFormats.Text));
     }
-    private void OnPreview(object sender, RoutedEventArgs e) => _previewTask = PreviewSelectedAsync(SelectedItem);
+    private void OnPreview(object sender, RoutedEventArgs e) { if (!IsUpdating && !_closing) _previewTask = PreviewSelectedAsync(SelectedItem); }
     private void OnOpenBook(object sender, RoutedEventArgs e) { if (SelectedItem is not null) OpenBook(SelectedItem.Files.FirstOrDefault()); }
     private void OnQueueDoubleClick(object sender, MouseButtonEventArgs e) { if (SelectedItem?.Status == QueueStatus.Completed) OpenBook(SelectedItem.Files.FirstOrDefault()); }
     private void OnShowBook(object sender, RoutedEventArgs e) { if (SelectedItem is not null) OpenBookFolder(SelectedItem.Files.FirstOrDefault()); }
@@ -490,10 +523,62 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
     private async void OnUpdate(object sender, RoutedEventArgs e)
     {
-        UpdateButton.IsEnabled = false;
-        try { await Updates.UpdateClient.CheckAsync(this, CancellationToken.None); }
-        catch (Exception error) { CurrentStatus = "Не удалось проверить обновление: " + error.Message; Log(CurrentStatus); }
-        finally { UpdateButton.IsEnabled = true; }
+        if (!CanOpenUpdates) return;
+        IsUpdating = true;
+        _saveTimer.Stop();
+        try
+        {
+            var window = new UpdateWindow(_updateClient, _updateTargetDirectory, AppUpdateBootstrap.ScratchRoot,
+                PrepareUpdateExitAsync, UpdateInstallBlockReason) { Owner = this };
+            CurrentUpdateWindow = window;
+            // Let the routed command return before entering the owned modal loop.
+            await Dispatcher.Yield(DispatcherPriority.Background);
+            if (!_closing) window.ShowDialog();
+        }
+        catch (Exception error) { CurrentStatus = "Не удалось открыть обновления: " + error.Message; Log(CurrentStatus); }
+        finally
+        {
+            CurrentUpdateWindow = null;
+            if (PendingAppUpdate is not null && !_closing) Close();
+            else if (!_closing) { IsUpdating = false; ScheduleSave(); }
+        }
+    }
+
+    private string? UpdateInstallBlockReason()
+    {
+        if (!_initialized || _closing) return "Приложение ещё не готово к перезапуску.";
+        if (IsBusy || !_sessionTask.IsCompleted) return "Дождитесь завершения загрузок или закройте это окно и поставьте очередь на паузу.";
+        if (!_store.CanWrite) return "Сначала восстановите повреждённые настройки и очередь. Исходное сохранение защищено.";
+        if (_saveFailed) return "Сначала устраните ошибку сохранения настроек и очереди.";
+        return null;
+    }
+
+    private async Task<bool> PrepareUpdateExitAsync(PreparedAppUpdate prepared, CancellationToken token)
+    {
+        string? blocked = UpdateInstallBlockReason();
+        if (blocked is not null) throw new InvalidOperationException(blocked);
+        if (!string.Equals(Path.GetFullPath(prepared.TargetDirectory).TrimEnd(Path.DirectorySeparatorChar),
+            _updateTargetDirectory.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Подготовленное обновление предназначено для другой папки приложения.");
+        if (!Version.TryParse(prepared.Version, out Version? version) || version <= _updateClient.CurrentVersion)
+            throw new InvalidDataException("Подготовлена неподходящая версия обновления.");
+        _previewStop?.Cancel();
+        await _previewTask.WaitAsync(TimeSpan.FromSeconds(30), token);
+        token.ThrowIfCancellationRequested();
+        blocked = UpdateInstallBlockReason();
+        if (blocked is not null) throw new InvalidOperationException(blocked);
+        await SaveOrThrowAsync();
+        token.ThrowIfCancellationRequested();
+        if (_saveFailed || !_store.CanWrite || _closing || IsBusy)
+            throw new IOException("Не удалось сохранить очередь и настройки перед перезапуском.");
+        PendingAppUpdate = prepared;
+        return true;
+    }
+
+    internal void ReportUpdateOutcome(string message)
+    {
+        Log(message);
+        if (_store.CanWrite && !_saveFailed) CurrentStatus = message;
     }
     private void OnSplitterChanged(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e) => ScheduleSave();
 
@@ -529,22 +614,46 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (_closing) return;
         _closing = true;
         Changed(nameof(CanStart));
+        Changed(nameof(CanEditSettings)); Changed(nameof(CanReceiveInput)); Changed(nameof(CanOpenUpdates));
         _saveTimer.Stop();
         _previewStop?.Cancel();
+        var updateWindow = CurrentUpdateWindow;
+        updateWindow?.CancelOperation();
+        updateWindow?.Close();
         if (IsBusy) { _stopReason = StopReason.Pause; _sessionStop?.Cancel(); }
-        try { await _sessionTask; await SaveSafelyAsync(); }
-        finally
+        try
         {
-            _tray?.Dispose();
-            _tray = null;
-            _trayIcon?.Dispose();
-            _trayIcon = null;
-            _sessionStop?.Dispose();
-            _previewStop?.Dispose();
-            _allowClose = true;
-            // Even a synchronous save (e.g. a protected corrupt profile) must
-            // finish the first Closing event before we request the final close.
-            _ = Dispatcher.BeginInvoke(new Action(Close));
+            if (updateWindow is not null) await updateWindow.OperationTask;
+            await _sessionTask;
+            if (PendingAppUpdate is not null)
+            {
+                await _previewTask.WaitAsync(TimeSpan.FromSeconds(30));
+                if (!_store.CanWrite || _saveFailed) throw new IOException("Очередь и настройки не сохранены.");
+                await SaveOrThrowAsync();
+            }
+            else await SaveSafelyAsync();
         }
+        catch (Exception error)
+        {
+            PendingAppUpdate?.Dispose();
+            PendingAppUpdate = null;
+            _closing = false;
+            IsUpdating = false;
+            Changed(nameof(CanStart)); Changed(nameof(CanEditSettings)); Changed(nameof(CanReceiveInput)); Changed(nameof(CanOpenUpdates));
+            CurrentStatus = "Перезапуск отменён: " + error.Message;
+            Log(CurrentStatus);
+            return;
+        }
+        if (_ownsUpdateClient && _updateClient is IDisposable ownedClient) ownedClient.Dispose();
+        _tray?.Dispose();
+        _tray = null;
+        _trayIcon?.Dispose();
+        _trayIcon = null;
+        _sessionStop?.Dispose();
+        _previewStop?.Dispose();
+        _allowClose = true;
+        // Even a synchronous save (e.g. a protected corrupt profile) must
+        // finish the first Closing event before we request the final close.
+        _ = Dispatcher.BeginInvoke(new Action(Close));
     }
 }

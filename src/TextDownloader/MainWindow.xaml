@@ -19,33 +19,33 @@
   <Grid Grid.Row="0" Margin="0,0,0,12">
    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
    <StackPanel><TextBlock Text="Text Downloader" FontSize="25" FontWeight="SemiBold"/><TextBlock Text="Все страницы рассказа → электронная книга" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0"/></StackPanel>
-   <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"><Button x:Name="HistoryButton" Content="История…" Click="OnHistory"/><Button x:Name="UpdateButton" Content="Проверить обновление" Click="OnUpdate"/></StackPanel>
+   <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"><Button x:Name="HistoryButton" Content="История…" Click="OnHistory"/><Button x:Name="UpdateButton" Content="Обновления…" Click="OnUpdate" IsEnabled="{Binding CanOpenUpdates}"/></StackPanel>
   </Grid>
   <Grid Grid.Row="1" Margin="0,0,0,14">
    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-   <TextBox x:Name="UrlInput" MinHeight="38" VerticalContentAlignment="Center" ToolTip="Одна или несколько ссылок на страницы чтения Sefan" KeyDown="OnUrlKeyDown" AutomationProperties.Name="Ссылка на рассказ"/>
-   <Button x:Name="PasteButton" Grid.Column="1" Content="Вставить" Click="OnPaste"/>
-   <Button x:Name="AddButton" Grid.Column="2" Content="+ Добавить" Background="{StaticResource AccentBrush}" Click="OnAdd"/>
-   <Button x:Name="LoadListButton" Grid.Column="3" Content="Открыть список…" Click="OnLoadList"/>
+   <TextBox x:Name="UrlInput" IsEnabled="{Binding CanReceiveInput}" MinHeight="38" VerticalContentAlignment="Center" ToolTip="Одна или несколько ссылок на страницы чтения Sefan" KeyDown="OnUrlKeyDown" AutomationProperties.Name="Ссылка на рассказ"/>
+   <Button x:Name="PasteButton" IsEnabled="{Binding CanReceiveInput}" Grid.Column="1" Content="Вставить" Click="OnPaste"/>
+   <Button x:Name="AddButton" IsEnabled="{Binding CanReceiveInput}" Grid.Column="2" Content="+ Добавить" Background="{StaticResource AccentBrush}" Click="OnAdd"/>
+   <Button x:Name="LoadListButton" IsEnabled="{Binding CanReceiveInput}" Grid.Column="3" Content="Открыть список…" Click="OnLoadList"/>
   </Grid>
   <Grid Grid.Row="2">
    <Grid.ColumnDefinitions><ColumnDefinition x:Name="QueueColumn" Width="350" MinWidth="250"/><ColumnDefinition Width="8"/><ColumnDefinition Width="*" MinWidth="320"/><ColumnDefinition Width="8"/><ColumnDefinition x:Name="PreviewColumn" Width="350" MinWidth="250"/></Grid.ColumnDefinitions>
    <Border Background="{StaticResource PanelBrush}" CornerRadius="12" Padding="12">
     <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
      <DockPanel><TextBlock Style="{StaticResource PanelTitle}" Text="Очередь"/><TextBlock Text="{Binding QueueCountText}" HorizontalAlignment="Right" Foreground="{StaticResource MutedBrush}"/></DockPanel>
-     <ListBox x:Name="QueueList" Grid.Row="1" ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem,Mode=TwoWay}" SelectionMode="Extended" MouseDoubleClick="OnQueueDoubleClick">
+     <ListBox x:Name="QueueList" IsEnabled="{Binding CanReceiveInput}" Grid.Row="1" ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem,Mode=TwoWay}" SelectionMode="Extended" MouseDoubleClick="OnQueueDoubleClick">
       <ListBox.ItemTemplate><DataTemplate>
        <StackPanel><TextBlock Text="{Binding DisplayTitle}" TextWrapping="Wrap" FontWeight="SemiBold"/><TextBlock Text="{Binding StatusText}" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0"/><TextBlock Text="{Binding Url}" Foreground="{StaticResource MutedBrush}" FontSize="11" TextTrimming="CharacterEllipsis" ToolTip="{Binding Url}"/></StackPanel>
       </DataTemplate></ListBox.ItemTemplate>
      </ListBox>
-     <WrapPanel Grid.Row="2" Margin="0,8,0,0"><Button x:Name="RepeatSelectedButton" Content="Повторить выбранные" Click="OnRepeatSelected" IsEnabled="{Binding CanEditSettings}"/><Button x:Name="RemoveButton" Content="Удалить выбранные" Click="OnRemove"/><Button x:Name="ClearCompletedButton" Content="Убрать готовые" Click="OnClearCompleted"/></WrapPanel>
+     <WrapPanel Grid.Row="2" Margin="0,8,0,0"><Button x:Name="RepeatSelectedButton" Content="Повторить выбранные" Click="OnRepeatSelected" IsEnabled="{Binding CanEditSettings}"/><Button x:Name="RemoveButton" IsEnabled="{Binding CanReceiveInput}" Content="Удалить выбранные" Click="OnRemove"/><Button x:Name="ClearCompletedButton" IsEnabled="{Binding CanReceiveInput}" Content="Убрать готовые" Click="OnClearCompleted"/></WrapPanel>
     </Grid>
    </Border>
    <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch" Background="Transparent" DragCompleted="OnSplitterChanged"/>
    <Border Grid.Column="2" Background="{StaticResource PanelBrush}" CornerRadius="12" Padding="12">
     <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
      <TextBlock Style="{StaticResource PanelTitle}" Text="Загрузки"/>
-     <DataGrid x:Name="DownloadsGrid" Grid.Row="1" ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem,Mode=TwoWay}" IsReadOnly="True">
+     <DataGrid x:Name="DownloadsGrid" IsEnabled="{Binding CanReceiveInput}" Grid.Row="1" ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem,Mode=TwoWay}" IsReadOnly="True">
       <DataGrid.Columns>
        <DataGridTextColumn Header="Рассказ" Binding="{Binding DisplayTitle}" Width="*" ElementStyle="{StaticResource GridTextStyle}"/>
        <DataGridTextColumn Header="Страницы" Binding="{Binding PageProgress}" Width="85" ElementStyle="{StaticResource GridTextStyle}"/>
@@ -66,7 +66,7 @@
      <TextBlock Grid.Row="2" Text="{Binding PreviewMetadata}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,8,0,12"/>
      <TextBlock Grid.Row="3" Text="{Binding PreviewStatus}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"/>
      <TextBox Grid.Row="4" x:Name="PreviewBody" Text="{Binding PreviewText,Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Background="Transparent" BorderThickness="0" Padding="0"/>
-     <WrapPanel Grid.Row="5" Margin="0,10,0,0"><Button x:Name="PreviewButton" Content="Обновить сведения" Click="OnPreview"/><Button x:Name="OpenBookButton" Content="Открыть книгу" Click="OnOpenBook"/><Button Content="Показать в папке" Click="OnShowBook"/></WrapPanel>
+     <WrapPanel Grid.Row="5" Margin="0,10,0,0"><Button x:Name="PreviewButton" IsEnabled="{Binding CanReceiveInput}" Content="Обновить сведения" Click="OnPreview"/><Button x:Name="OpenBookButton" Content="Открыть книгу" Click="OnOpenBook"/><Button Content="Показать в папке" Click="OnShowBook"/></WrapPanel>
     </Grid>
    </Border>
   </Grid>
