@@ -41,8 +41,8 @@ Windows-пакета выполняются только в Windows; успеш�
 Перед выпуском дождитесь зелёных проверок основного коммита, затем создайте тег:
 
 ```powershell
-git tag v0.1.3
-git push origin v0.1.3
+git tag v0.1.4
+git push origin v0.1.4
 ```
 
 В выпуск входят `TextDownloader-Windows-x64.zip` и `SHA256SUMS.txt`.

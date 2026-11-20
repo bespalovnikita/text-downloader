@@ -16,7 +16,7 @@ public sealed class SefanSource : IStorySource
     private readonly SemaphoreSlim _requestGate = new(1, 1);
     private long? _lastRequest;
     private static readonly Regex PathPattern = new(
-        @"^(?<directory>/stories/(?<language>[a-z]{2})/\d+/[^/]+/)(?<slug>[^/]+?)_(?<part>\d+)(?:-(?<page>\d+))?\.html$",
+        @"^(?<directory>/stories/(?<language>[a-z]{2})/\d+/(?<genre>[^/]+)/)(?<slug>[^/]+?)_(?<part>\d+)(?:-(?<page>\d+))?\.html$",
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
     private static readonly HashSet<string> SkippedTags = new(StringComparer.OrdinalIgnoreCase)
         { "script", "style", "noscript", "form", "nav", "iframe", "button" };
@@ -97,7 +97,9 @@ public sealed class SefanSource : IStorySource
         if (candidates.Length == 0)
             candidates = nodes.Where(n => n.Name == "a" && Attribute(n, "title").Equals("Следующая страница", StringComparison.OrdinalIgnoreCase)
                 && !string.IsNullOrWhiteSpace(Attribute(n, "href"))).Select(n => Attribute(n, "href")).ToArray();
-        var nexts = candidates.Select(href => SameStory(new Uri(url, href), url)).DistinctBy(u => u.AbsoluteUri, StringComparer.Ordinal).ToArray();
+        // Sefan can emit different display styles or an admitted neutral-route
+        // alias in its head/body links for the same ordered story page.
+        var nexts = candidates.Select(href => SameStory(new Uri(url, href), url)).DistinctBy(PageNumber).ToArray();
         if (nexts.Length > 1) throw new InvalidDataException("Противоречивые ссылки «Далее» на странице рассказа.");
         var next = nexts.FirstOrDefault();
         var current = PageNumber(url);
@@ -139,11 +141,27 @@ public sealed class SefanSource : IStorySource
         source = Normalize(source);
         var actual = PathPattern.Match(uri.AbsolutePath);
         var expected = PathPattern.Match(source.AbsolutePath);
-        foreach (var group in new[] { "directory", "slug", "part" })
+        // Numeric display styles can differ between the document's head/body.
+        // The neutral /i/ route is the only admitted cross-genre alias.
+        foreach (var group in new[] { "language", "slug", "part" })
             if (!actual.Groups[group].Value.Equals(expected.Groups[group].Value, StringComparison.Ordinal))
-                throw new InvalidDataException("Ссылка ведёт на другой рассказ; загрузка остановлена.");
+                throw new SefanStoryScopeMismatchException(source, uri);
+        if (!actual.Groups["genre"].Value.Equals(expected.Groups["genre"].Value, StringComparison.Ordinal) &&
+            actual.Groups["genre"].Value != "i" && expected.Groups["genre"].Value != "i")
+            throw new SefanStoryScopeMismatchException(source, uri);
         return uri;
     }
+
+    internal static Uri WithNeutralGenre(Uri uri)
+    {
+        uri = Normalize(uri);
+        var genre = PathPattern.Match(uri.AbsolutePath).Groups["genre"];
+        string path = uri.AbsolutePath[..genre.Index] + "i" + uri.AbsolutePath[(genre.Index + genre.Length)..];
+        return new Uri("https://sefan.ru" + path);
+    }
+
+    internal static bool IsNeutralGenre(Uri uri) =>
+        PathPattern.Match(Normalize(uri).AbsolutePath).Groups["genre"].Value == "i";
 
     internal static int PageNumber(Uri uri)
     {

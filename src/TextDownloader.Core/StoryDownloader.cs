@@ -21,14 +21,39 @@ public sealed class StoryDownloader
         _cacheDirectory = Path.GetFullPath(cacheDirectory);
     }
 
-    public Task<StoryPage> PreviewAsync(Uri url, bool confirmAdult, CancellationToken token) =>
-        _source.GetPageAsync(_source.NormalizeToFirstPage(url), confirmAdult, token);
+    public async Task<StoryPage> PreviewAsync(Uri url, bool confirmAdult, CancellationToken token)
+    {
+        var first = _source.NormalizeToFirstPage(url);
+        try { return await _source.GetPageAsync(first, confirmAdult, token).ConfigureAwait(false); }
+        catch (SefanStoryScopeMismatchException) when (!SefanSource.IsNeutralGenre(first))
+        {
+            token.ThrowIfCancellationRequested();
+            // Retry only the original story, never the rejected destination.
+            return await _source.GetPageAsync(SefanSource.WithNeutralGenre(first), confirmAdult, token).ConfigureAwait(false);
+        }
+    }
 
     public async Task<BookDocument> DownloadAsync(Uri url, bool confirmAdult, bool refresh,
         IProgress<DownloadProgress>? progress, CancellationToken cancellationToken)
     {
         if (MaxPages < 1) throw new ArgumentOutOfRangeException(nameof(MaxPages));
         var first = _source.NormalizeToFirstPage(url);
+        try { return await DownloadAttemptAsync(first, confirmAdult, refresh, progress, cancellationToken).ConfigureAwait(false); }
+        catch (SefanStoryScopeMismatchException) when (!SefanSource.IsNeutralGenre(first))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            progress?.Report(new DownloadProgress(0, null,
+                "Сайт изменил маршрут рассказа. Повторяем загрузку с первой страницы через /i/."));
+            // A separate attempt has its own cache key and empty in-memory page
+            // list. Its scope error, if any, is deliberately not retried again.
+            return await DownloadAttemptAsync(SefanSource.WithNeutralGenre(first), confirmAdult, refresh,
+                progress, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<BookDocument> DownloadAttemptAsync(Uri first, bool confirmAdult, bool refresh,
+        IProgress<DownloadProgress>? progress, CancellationToken cancellationToken)
+    {
         var cache = Path.Combine(_cacheDirectory, Hash(Encoding.UTF8.GetBytes(first.AbsoluteUri)).ToLowerInvariant());
         var pages = new List<StoryPage>();
         var visited = new HashSet<string>(StringComparer.Ordinal);

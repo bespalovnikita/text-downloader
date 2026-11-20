@@ -24,6 +24,10 @@ internal static class Program
         [
             ("URL scope and start from any page", UrlScope),
             ("Stories with arbitrary filename prefixes download every page", FlexibleStoryNames),
+            ("Style and genre aliases preserve complete story identity and exact text", PresentationAliases),
+            ("HTTP redirects and age forms allow only same-story page aliases", AliasTransportScope),
+            ("Scope fallback retries neutral genre once without mixing partial text", NeutralGenreFallback),
+            ("Neutral genre fallback preserves adult permission and non-scope failures", FallbackScopeAndPermission),
             ("HTML text, navigation, source whitespace and age gate", HtmlParsing),
             ("Age confirmation is sent only after explicit permission", AgeConfirmation),
             ("Complete chain joins words and punctuation without page headings", CompleteStory),
@@ -65,9 +69,241 @@ internal static class Program
             "https://sefan.ru/stories/ru/2/drama/_1.html",
             "https://sefan.ru/stories/ru/2/drama/vse-chasti/chitat_test-story.html" })
             Check(!source.CanHandle(new Uri(bad)), "Rejected source was accepted: " + bad);
-        string other = PageUrl(2).AbsoluteUri.Replace("/2/drama/", "/5/fantasy/");
-        Throws(() => SefanSource.Parse(PageHtml("Текст.").Replace("</body>", $"<a rel='next' href='{other}'>Далее</a></body>"), Source));
+        string other = PageUrl(2).AbsoluteUri.Replace("/2/drama/", "/5/drama/");
+        Equal(new Uri(other), SefanSource.Parse(PageHtml("Текст.").Replace("</body>", $"<a rel='next' href='{other}'>Далее</a></body>"), Source).NextUrl);
+        Equal(new Uri(other.Replace("/drama/", "/i/")), SefanSource.Parse(PageHtml("Текст.").Replace("</body>",
+            $"<a rel='next' href='{other.Replace("/drama/", "/i/")}'>Далее</a></body>"), Source).NextUrl);
+        Throws(() => SefanSource.Parse(PageHtml("Текст.").Replace("</body>",
+            $"<a rel='next' href='{other.Replace("/drama/", "/fantasy/")}'>Далее</a></body>"), Source));
+        Throws(() => SefanSource.Parse(PageHtml("Текст.").Replace("</body>",
+            $"<a rel='next' href='{other.Replace("test-story", "different-story")}'>Далее</a></body>"), Source));
         return Task.CompletedTask;
+    }
+
+    private static async Task PresentationAliases()
+    {
+        string[] names = ["chitat_alias-story", "alias-story", "read_alias_story", "rasskaz_2026", "12345"];
+        string[] genres = ["drama", "romantika", "another-category", "proza-i-istorii", "genre42"];
+        for (int index = 0; index < names.Length; index++)
+        {
+            string name = names[index], genre = genres[index];
+            // Numeric styles are presentation views. Genre changes are explicit
+            // only when one side is Sefan's neutral /i/ route.
+            Uri first = new($"https://sefan.ru/stories/ru/5/{genre}/{name}_7.html");
+            Uri secondHead = new($"https://sefan.ru/stories/ru/2/{genre}/{name}_7-2.html");
+            Uri secondBody = new($"https://sefan.ru/stories/ru/903/{genre}/{name}_7-2.html");
+            Uri third = new($"https://sefan.ru/stories/ru/17/i/{name}_7-3.html");
+            Uri lastAlias = new($"https://sefan.ru/stories/ru/42/i/{name}_7-3.html");
+            string firstHtml = AliasPage("Первый абзац.<br/>Мы выбрали даль", secondHead, secondBody, lastAlias);
+            string secondHtml = AliasPage("нюю дорогу и <em>вышли</em>\n", third, lastAlias, lastAlias);
+            string lastHtml = AliasPage("к реке.<br/>Финал &amp; точка.", null, null, lastAlias);
+            using var folder = new TemporaryDirectory();
+            using var source = new FakeSource(new()
+            {
+                [first] = firstHtml,
+                [secondHead] = secondHtml,
+                [secondBody] = secondHtml,
+                [third] = lastHtml,
+                [lastAlias] = lastHtml,
+            });
+            BookDocument book = await new StoryDownloader(source, folder.Path)
+                .DownloadAsync(first, false, false, null, CancellationToken.None);
+            Equal(3, book.PageCount);
+            Equal(first, book.SourceUrl);
+            Equal("Синтетический рассказ", book.Title);
+            Sequence(new[] { "Первый абзац.", "Мы выбрали дальнюю дорогу и вышли к реке.", "Финал & точка." }, book.Paragraphs);
+            Equal(3, source.Calls.Count);
+            Equal(first, source.Calls[0]);
+            Check(new[] { secondHead, secondBody }.Contains(source.Calls[1]), "Second-page aliases were fetched twice or skipped.");
+            Check(new[] { third, lastAlias }.Contains(source.Calls[2]), "Third-page aliases were fetched twice or skipped.");
+
+            string[] badNexts =
+            [
+                secondHead.AbsoluteUri.Replace("/ru/", "/uk/"),
+                secondHead.AbsoluteUri.Replace(name + "_7-2", "different-" + name + "_7-2"),
+                secondHead.AbsoluteUri.Replace("_7-2.html", "_8-2.html"),
+                secondHead.AbsoluteUri.Replace("sefan.ru/", "sefan.ru.example.org/"),
+                secondHead.AbsoluteUri.Replace("_7-2.html", "_7-3.html"),
+                secondHead.AbsoluteUri.Replace(name + "_7-2", (name.StartsWith("chitat_", StringComparison.Ordinal) ? name[7..] : "chitat_" + name) + "_7-2"),
+            ];
+            foreach (string bad in badNexts)
+                Throws(() => SefanSource.Parse(AliasPage("Текст.", new Uri(bad), new Uri(bad), lastAlias), first));
+            // A valid head link must not mask a contradictory body link, whether
+            // it points at a different page or changes the exact story filename.
+            Throws(() => SefanSource.Parse(AliasPage("Текст.", secondHead, third, lastAlias), first));
+            Throws(() => SefanSource.Parse(AliasPage("Текст.", secondHead,
+                new Uri(secondBody.AbsoluteUri.Replace(name + "_7-2", "other-story_7-2")), lastAlias), first));
+            if (name != name.ToUpperInvariant())
+                Throws(() => SefanSource.Parse(AliasPage("Текст.",
+                    new Uri(secondHead.AbsoluteUri.Replace(name + "_7-2", name.ToUpperInvariant() + "_7-2")), null, lastAlias), first));
+        }
+    }
+
+    private static string AliasPage(string fragment, Uri? headNext, Uri? bodyNext, Uri last)
+    {
+        string head = headNext is null ? "" : $"<link rel='next' href='{headNext}'>";
+        string inlineNext = bodyNext is null ? "" : $"<a title='Следующая страница' href='{bodyNext}'>•••</a>";
+        string body = bodyNext is null ? "" : $"<a rel='next' href='{bodyNext}'>Далее</a>";
+        return $"<html><head>{head}</head><body><h1>Синтетический рассказ</h1>" +
+            $"<div id='rsz'>{fragment}{inlineNext}</div>{body}" +
+            $"<a rel='last' title='Страница 3 из 3' href='{last}'>Последняя</a></body></html>";
+    }
+
+    private static async Task AliasTransportScope()
+    {
+        Uri original = new("https://sefan.ru/stories/ru/5/drama/chitat_transport_1.html");
+        Uri redirected = new("https://sefan.ru/stories/ru/2/drama/chitat_transport_1.html");
+        Uri ageAction = new("https://sefan.ru/stories/ru/99/i/chitat_transport_1.html");
+        string gate = $"<form action='{ageAction}'><input name='freed' value='1'>" +
+            "<input type='hidden' name='nonce' value='alias-token'><input name='fkay' value='Подтверждаю'></form>";
+        const string complete = "<h1>Синтетический рассказ</h1><div id='rsz'>Целый рассказ.</div><span class='but'>Далее</span>";
+        using (var handler = new SequenceHandler(
+            new HttpResponseMessage(HttpStatusCode.Redirect) { Headers = { Location = redirected } },
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(gate, Encoding.UTF8, "text/html") },
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(complete, Encoding.UTF8, "text/html") }))
+        using (var http = new HttpClient(handler))
+        using (var source = new SefanSource(http))
+        {
+            StoryPage page = await source.GetPageAsync(original, true, CancellationToken.None);
+            Equal(1, page.TotalPages);
+            Equal(ageAction, page.Url);
+            Sequence(new[] { original, redirected, ageAction }, handler.RequestUris);
+            Sequence(new[] { HttpMethod.Get, HttpMethod.Get, HttpMethod.Post }, handler.Requests.Select(request => request.Method));
+            Check(handler.Requests[2].Body.Contains("freed=1") && handler.Requests[2].Body.Contains("nonce=alias-token"), "Aliased age form was not posted correctly.");
+        }
+
+        using (var handler = new SequenceHandler(new HttpResponseMessage(HttpStatusCode.Redirect)
+            { Headers = { Location = new Uri(redirected.AbsoluteUri.Replace("sefan.ru", "example.org")) } }))
+        using (var http = new HttpClient(handler))
+        using (var source = new SefanSource(http))
+        {
+            await ThrowsAsync(() => source.GetPageAsync(original, true, CancellationToken.None));
+            Equal(1, handler.Requests.Count);
+        }
+        using (var handler = new SequenceHandler(gate.Replace("_1.html", "_1-2.html")))
+        using (var http = new HttpClient(handler))
+        using (var source = new SefanSource(http))
+        {
+            await ThrowsAsync(() => source.GetPageAsync(original, true, CancellationToken.None));
+            Equal(1, handler.Requests.Count);
+            Equal(HttpMethod.Get, handler.Requests[0].Method);
+        }
+    }
+
+    private static async Task NeutralGenreFallback()
+    {
+        foreach (string name in new[] { "chitat_fallback-story", "fallback-story" })
+        foreach (bool wrongFilename in new[] { false, true })
+        {
+            Uri original = new($"https://sefan.ru/stories/ru/5/another-genre/{name}_3.html");
+            Uri originalSecond = new($"https://sefan.ru/stories/ru/2/another-genre/{name}_3-2.html");
+            Uri originalThird = new($"https://sefan.ru/stories/ru/2/another-genre/{name}_3-3.html");
+            Uri rejectedNext = new(wrongFilename
+                ? originalThird.AbsoluteUri.Replace(name + "_3-3", "different-story_3-3")
+                : originalThird.AbsoluteUri.Replace("/another-genre/", "/drama/"));
+            Uri neutral = new(original.AbsoluteUri.Replace("/another-genre/", "/i/"));
+            Uri neutralSecond = new(originalSecond.AbsoluteUri.Replace("/another-genre/", "/i/"));
+            using var folder = new TemporaryDirectory();
+            using var source = new FakeSource(new()
+            {
+                [original] = ChainPage("Промежуточный текст нельзя смешивать. ", originalSecond, originalThird, 3),
+                [originalSecond] = ChainPage("Чужой промежуточный хвост.", rejectedNext, originalThird, 3),
+                [neutral] = ChainPage("Полный текст ", neutralSecond, neutralSecond, 2),
+                [neutralSecond] = ChainPage("правильного маршрута.<br>Конец.", null, neutralSecond, 2),
+            });
+            BookDocument book = await new StoryDownloader(source, folder.Path)
+                .DownloadAsync(original, true, false, null, CancellationToken.None);
+            Equal(neutral, book.SourceUrl);
+            Equal(2, book.PageCount);
+            Sequence(new[] { "Полный текст правильного маршрута.", "Конец." }, book.Paragraphs);
+            Sequence(new[] { original, originalSecond, neutral, neutralSecond }, source.Calls);
+            Check(source.Confirmations.All(value => value), "Fallback lost explicit adult permission.");
+            // The discarded first attempt did persist a page, so this also
+            // proves /i/ did not reuse that original-genre cache record.
+            Check(Directory.GetFiles(folder.Path, "*.json", SearchOption.AllDirectories).Length >= 3, "Expected distinct original and /i/ cache records.");
+        }
+
+        Uri first = new("https://sefan.ru/stories/ru/5/drama/chitat_failed-fallback_1.html");
+        Uri neutralFirst = new(first.AbsoluteUri.Replace("/drama/", "/i/"));
+        Uri wrongNext = new("https://sefan.ru/stories/ru/2/drama/chitat_wrong-story_1-2.html");
+        string invalid = ChainPage("Не тот маршрут.", wrongNext, wrongNext, 2);
+        using (var folder = new TemporaryDirectory())
+        using (var source = new FakeSource(new() { [first] = invalid, [neutralFirst] = invalid }))
+        {
+            await ThrowsAsync(() => new StoryDownloader(source, folder.Path).DownloadAsync(first, false, false, null, CancellationToken.None));
+            Sequence(new[] { first, neutralFirst }, source.Calls);
+            Check(source.Confirmations.All(value => !value), "Fallback granted adult permission implicitly.");
+        }
+        using (var folder = new TemporaryDirectory())
+        using (var source = new FakeSource(new() { [neutralFirst] = invalid }))
+        {
+            await ThrowsAsync(() => new StoryDownloader(source, folder.Path).DownloadAsync(neutralFirst, false, false, null, CancellationToken.None));
+            Sequence(new[] { neutralFirst }, source.Calls);
+        }
+    }
+
+    private static string ChainPage(string fragment, Uri? next, Uri? last, int? total)
+    {
+        string forward = next is null ? "" : $"<a rel='next' href='{next}'>Далее</a>";
+        string ending = last is null || total is null ? "" : $"<a rel='last' title='Страница {total} из {total}' href='{last}'>Последняя</a>";
+        return $"<h1>Рассказ для проверки маршрута</h1><div id='rsz'>{fragment}</div>{forward}{ending}";
+    }
+
+    private static async Task FallbackScopeAndPermission()
+    {
+        Uri original = new("https://sefan.ru/stories/ru/5/drama/read_permission-story_1.html");
+        Uri neutral = new(original.AbsoluteUri.Replace("/drama/", "/i/"));
+        Uri neutralSecond = new(neutral.AbsoluteUri.Replace("_1.html", "_1-2.html"));
+        Uri wrongGenreNext = new(original.AbsoluteUri.Replace("/drama/", "/romantika/").Replace("_1.html", "_1-2.html"));
+        string mismatch = ChainPage("Исходный текст.", wrongGenreNext, wrongGenreNext, 2);
+        string gate = $"<form action='{neutral}'><input name='freed' value='1'>" +
+            "<input type='hidden' name='nonce' value='neutral-token'><input name='fkay' value='Подтверждаю'></form>";
+        string complete = ChainPage("Начало правильного текста.", neutralSecond, neutralSecond, 2);
+        using (var folder = new TemporaryDirectory())
+        using (var handler = new SequenceHandler(mismatch, gate))
+        using (var http = new HttpClient(handler))
+        using (var source = new SefanSource(http))
+        {
+            await ThrowsAsync<AgeConfirmationRequiredException>(() => new StoryDownloader(source, folder.Path)
+                .PreviewAsync(new Uri(original.AbsoluteUri.Replace("_1.html", "_1-12.html")), false, CancellationToken.None));
+            Sequence(new[] { original, neutral }, handler.RequestUris);
+            Check(handler.Requests.All(request => request.Method == HttpMethod.Get), "Fallback posted age consent without permission.");
+        }
+        using (var folder = new TemporaryDirectory())
+        using (var handler = new SequenceHandler(mismatch, gate, complete))
+        using (var http = new HttpClient(handler))
+        using (var source = new SefanSource(http))
+        {
+            StoryPage preview = await new StoryDownloader(source, folder.Path)
+                .PreviewAsync(new Uri(original.AbsoluteUri.Replace("_1.html", "_1-12.html")), true, CancellationToken.None);
+            Equal(neutral, preview.Url);
+            Equal(2, preview.TotalPages);
+            Sequence(new[] { original, neutral, neutral }, handler.RequestUris);
+            Sequence(new[] { HttpMethod.Get, HttpMethod.Get, HttpMethod.Post }, handler.Requests.Select(request => request.Method));
+            Check(handler.Requests[2].Body.Contains("freed=1") && handler.Requests[2].Body.Contains("nonce=neutral-token"), "Explicit adult permission was not preserved on fallback.");
+        }
+
+        foreach (string invalid in new[]
+        {
+            "<h1>Нет блока чтения</h1>",
+            ChainPage("Пропуск номера.", new Uri(original.AbsoluteUri.Replace("_1.html", "_1-3.html")), null, null),
+            ChainPage("Нельзя подтвердить конец.", null, null, null),
+            ChainPage("Внешняя ссылка.", new Uri("https://example.org/stories/ru/5/drama/read_permission-story_1-2.html"), null, null),
+            "<form><input name='freed' value='1'></form>",
+        })
+        {
+            using var folder = new TemporaryDirectory();
+            using var source = new FakeSource(new() { [original] = invalid });
+            await ThrowsAsync(() => new StoryDownloader(source, folder.Path).DownloadAsync(original, false, false, null, CancellationToken.None));
+            Sequence(new[] { original }, source.Calls);
+        }
+        foreach (Exception error in new Exception[] { new IOException("Synthetic network failure."), new OperationCanceledException(new CancellationToken(true)) })
+        {
+            using var folder = new TemporaryDirectory();
+            using var source = new FailingSource(error);
+            await ThrowsAsync(() => new StoryDownloader(source, folder.Path).DownloadAsync(original, false, false, null, CancellationToken.None));
+            Sequence(new[] { original }, source.Calls);
+        }
     }
 
     private static async Task FlexibleStoryNames()
@@ -351,13 +587,27 @@ internal static class Program
     private sealed class FakeSource(Dictionary<Uri, string> pages) : IStorySource
     {
         public List<Uri> Calls { get; } = [];
+        public List<bool> Confirmations { get; } = [];
         public bool CanHandle(Uri uri) { using var source = new SefanSource(); return source.CanHandle(uri); }
         public Uri NormalizeToFirstPage(Uri uri) { using var source = new SefanSource(); return source.NormalizeToFirstPage(uri); }
         public Task<StoryPage> GetPageAsync(Uri uri, bool confirmAdult, CancellationToken token)
         {
-            token.ThrowIfCancellationRequested(); Calls.Add(uri);
+            token.ThrowIfCancellationRequested(); Calls.Add(uri); Confirmations.Add(confirmAdult);
             if (!pages.TryGetValue(uri, out string? html)) throw new IOException("Synthetic page unavailable: " + uri);
             return Task.FromResult(SefanSource.Parse(html, uri));
+        }
+        public void Dispose() { }
+    }
+
+    private sealed class FailingSource(Exception error) : IStorySource
+    {
+        public List<Uri> Calls { get; } = [];
+        public bool CanHandle(Uri uri) { using var source = new SefanSource(); return source.CanHandle(uri); }
+        public Uri NormalizeToFirstPage(Uri uri) { using var source = new SefanSource(); return source.NormalizeToFirstPage(uri); }
+        public Task<StoryPage> GetPageAsync(Uri uri, bool confirmAdult, CancellationToken token)
+        {
+            Calls.Add(uri);
+            return Task.FromException<StoryPage>(error);
         }
         public void Dispose() { }
     }
@@ -367,16 +617,23 @@ internal static class Program
         public void Report(DownloadProgress value) => report(value);
     }
 
-    private sealed class SequenceHandler(params string[] bodies) : HttpMessageHandler
+    private sealed class SequenceHandler : HttpMessageHandler
     {
+        private readonly Func<HttpResponseMessage>[] replies;
         public List<(HttpMethod Method, string Body)> Requests { get; } = [];
+        public List<Uri> RequestUris { get; } = [];
+        public SequenceHandler(params string[] bodies) => replies = bodies.Select<string, Func<HttpResponseMessage>>(body => () =>
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "text/html") }).ToArray();
+        public SequenceHandler(params HttpResponseMessage[] responses) => replies = responses.Select<HttpResponseMessage, Func<HttpResponseMessage>>(response => () => response).ToArray();
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
             string body = request.Content is null ? "" : await request.Content.ReadAsStringAsync(token);
             Requests.Add((request.Method, body));
-            if (Requests.Count > bodies.Length) throw new IOException("Unexpected synthetic HTTP request.");
-            return new HttpResponseMessage(HttpStatusCode.OK) { RequestMessage = request,
-                Content = new StringContent(bodies[Requests.Count - 1], Encoding.UTF8, "text/html") };
+            RequestUris.Add(request.RequestUri ?? throw new IOException("Synthetic request has no URI."));
+            if (Requests.Count > replies.Length) throw new IOException("Unexpected synthetic HTTP request.");
+            HttpResponseMessage response = replies[Requests.Count - 1]();
+            response.RequestMessage = request;
+            return response;
         }
     }
 
