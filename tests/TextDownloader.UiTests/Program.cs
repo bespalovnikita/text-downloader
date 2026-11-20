@@ -148,9 +148,9 @@ internal static class Program
     }
     private static async Task ReachedSecondPageAsync(MainWindow window, FakeNetwork network)
     {
-        await Task.WhenAny(network.SecondPageStarted.Task, window.ActiveSession);
         try
         {
+            await Task.WhenAny(network.SecondPageStarted.Task, window.ActiveSession).WaitAsync(TimeSpan.FromSeconds(10));
             if (!network.SecondPageStarted.Task.IsCompleted && window.ActiveSession.IsCompleted)
                 throw new InvalidOperationException("The session stopped before requesting page two.");
             await network.SecondPageStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
