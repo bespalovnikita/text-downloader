@@ -16,7 +16,7 @@ public sealed class SefanSource : IStorySource
     private readonly SemaphoreSlim _requestGate = new(1, 1);
     private long? _lastRequest;
     private static readonly Regex PathPattern = new(
-        @"^(?<directory>/stories/(?<language>[a-z]{2})/\d+/[^/]+/)(?<slug>chitat_[^/]+?)_(?<part>\d+)(?:-(?<page>\d+))?\.html$",
+        @"^(?<directory>/stories/(?<language>[a-z]{2})/\d+/[^/]+/)(?<slug>[^/]+?)_(?<part>\d+)(?:-(?<page>\d+))?\.html$",
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
     private static readonly HashSet<string> SkippedTags = new(StringComparer.OrdinalIgnoreCase)
         { "script", "style", "noscript", "form", "nav", "iframe", "button" };
@@ -129,7 +129,7 @@ public sealed class SefanSource : IStorySource
         var match = PathPattern.Match(uri.AbsolutePath);
         if (!match.Success || !int.TryParse(match.Groups["part"].Value, out var part) || part < 1 ||
             (match.Groups["page"].Success && (!int.TryParse(match.Groups["page"].Value, out var page) || page < 1)))
-            throw new ArgumentException("Нужна нумерованная страница чтения Sefan: chitat_название_1.html или _1-2.html.");
+            throw new ArgumentException("Нужна нумерованная страница чтения Sefan: название_1.html или название_1-2.html. Префикс имени не ограничен.");
         return new Uri("https://sefan.ru" + uri.AbsolutePath);
     }
 

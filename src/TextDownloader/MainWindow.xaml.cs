@@ -161,7 +161,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
             catch (Exception error) { rejected++; Log("Ссылка отклонена: " + error.Message); }
         }
-        CurrentStatus = $"Добавлено: {added}." + (rejected > 0 ? $" Не поддерживаются: {rejected}. Нужна ссылка chitat_название_1.html." : "");
+        CurrentStatus = $"Добавлено: {added}." + (rejected > 0 ? $" Не поддерживаются: {rejected}. Нужна ссылка на страницу чтения Sefan вида название_1.html или название_1-2.html." : "");
         Log(CurrentStatus);
         if (first is not null) SelectedItem = first;
         await SaveSafelyAsync();

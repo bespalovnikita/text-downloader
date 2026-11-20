@@ -1,6 +1,5 @@
 using System.IO.Compression;
 using System.IO;
-using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Xml.Linq;
@@ -45,7 +44,7 @@ internal static class Program
         window.OutputDirectory = Path.Combine(Root, "books");
 
         // Add through the actual routed button, normalising a later page and a duplicate.
-        ((TextBox)window.FindName("UrlInput")).Text = "https://sefan.ru/stories/ru/2/drama/chitat_fixture_1-2.html\nhttps://sefan.ru/stories/ru/2/drama/chitat_fixture_1.html";
+        ((TextBox)window.FindName("UrlInput")).Text = "https://sefan.ru/stories/ru/2/drama/fixture_1-2.html\nhttps://sefan.ru/stories/ru/2/drama/fixture_1.html";
         Click(window, "AddButton");
         await UntilAsync(() => window.Items.Count == 1, "Add button did not populate queue");
         await window.ActivePreview.WaitAsync(TimeSpan.FromSeconds(10));
@@ -187,8 +186,9 @@ internal static class Program
     }
     private sealed class FakeSource(FakeNetwork network) : IStorySource
     {
-        public bool CanHandle(Uri uri) => uri.Host == "sefan.ru" && uri.AbsolutePath.Contains("chitat_");
-        public Uri NormalizeToFirstPage(Uri uri) => new(Regex.Replace(uri.AbsoluteUri, @"_1-\d+\.html$", "_1.html"));
+        private readonly SefanSource _urls = new();
+        public bool CanHandle(Uri uri) => _urls.CanHandle(uri);
+        public Uri NormalizeToFirstPage(Uri uri) => _urls.NormalizeToFirstPage(uri);
         public async Task<StoryPage> GetPageAsync(Uri uri, bool confirmAdult, CancellationToken cancellationToken)
         {
             if (network.RequireAdult && !confirmAdult) throw new AgeConfirmationRequiredException();
@@ -210,6 +210,6 @@ internal static class Program
                 second ? " и втором фрагменте.\nКонец рассказа." : "Текст на первом",
                 second ? null : new Uri(uri.AbsoluteUri.Replace("_1.html", "_1-2.html")), 2);
         }
-        public void Dispose() { }
+        public void Dispose() => _urls.Dispose();
     }
 }

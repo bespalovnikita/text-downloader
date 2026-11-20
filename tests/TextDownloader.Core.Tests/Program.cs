@@ -22,6 +22,7 @@ internal static class Program
         (string Name, Func<Task> Run)[] tests =
         [
             ("URL scope and start from any page", UrlScope),
+            ("Stories with arbitrary filename prefixes download every page", FlexibleStoryNames),
             ("HTML text, navigation, source whitespace and age gate", HtmlParsing),
             ("Age confirmation is sent only after explicit permission", AgeConfirmation),
             ("Complete chain joins words and punctuation without page headings", CompleteStory),
@@ -59,11 +60,45 @@ internal static class Program
             Source.AbsoluteUri.Replace("sefan.ru", "sefan.ru.example.org"),
             Source.AbsoluteUri.Replace("https://", "https://user:password@"),
             Source.AbsoluteUri.Replace("_1.html", "_0.html"),
+            "https://sefan.ru/stories/ru/2/drama/_1.html",
             "https://sefan.ru/stories/ru/2/drama/vse-chasti/chitat_test-story.html" })
             Check(!source.CanHandle(new Uri(bad)), "Rejected source was accepted: " + bad);
         string other = PageUrl(2).AbsoluteUri.Replace("/2/drama/", "/5/fantasy/");
         Throws(() => SefanSource.Parse(PageHtml("Текст.").Replace("</body>", $"<a rel='next' href='{other}'>Далее</a></body>"), Source));
         return Task.CompletedTask;
+    }
+
+    private static async Task FlexibleStoryNames()
+    {
+        using var parser = new SefanSource();
+        foreach (string name in new[] { "test-story", "read_test-story", "rasskaz_2026", "12345" })
+        {
+            var first = new Uri($"https://sefan.ru/stories/ru/2/drama/{name}_1.html");
+            var later = new Uri($"https://sefan.ru/stories/ru/2/drama/{name}_1-12.html");
+            Check(parser.CanHandle(first) && parser.CanHandle(later), "A filename without chitat_ was rejected: " + name);
+            Equal(first, parser.NormalizeToFirstPage(later));
+        }
+
+        var unprefixed = new Uri(Source.AbsoluteUri.Replace("chitat_test-story", "test-story"));
+        var second = new Uri(unprefixed.AbsoluteUri.Replace("_1.html", "_1-2.html"));
+        string firstHtml = PageHtml("Начало предло", next: 2, total: 2).Replace("chitat_test-story", "test-story");
+        string lastHtml = PageHtml("жения.<br>Конец.", total: 2).Replace("chitat_test-story", "test-story");
+        using var folder = new TemporaryDirectory();
+        using var source = new FakeSource(new Dictionary<Uri, string>
+        {
+            [unprefixed] = firstHtml,
+            [second] = lastHtml,
+        });
+        var book = await new StoryDownloader(source, folder.Path)
+            .DownloadAsync(second, false, false, null, CancellationToken.None);
+        Equal(unprefixed, book.SourceUrl);
+        Equal(2, book.PageCount);
+        Sequence(new[] { "Начало предложения.", "Конец." }, book.Paragraphs);
+        Sequence(new[] { unprefixed, second }, source.Calls);
+
+        // Optional naming conventions do not make different filenames aliases.
+        Throws(() => SefanSource.Parse(PageHtml("Текст", next: 2, total: 2), unprefixed));
+        Throws(() => SefanSource.Parse(firstHtml.Replace("test-story_1-2", "other-story_1-2"), unprefixed));
     }
 
     private static Task HtmlParsing()
