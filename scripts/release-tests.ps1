@@ -27,6 +27,25 @@ function global:gh {
     $global:LASTEXITCODE = 0
     if ($arguments[0] -eq 'api') {
         $route = @($arguments | Where-Object { $_ -like 'repos/*' })[0]
+        if ($route.EndsWith('/git/ref/tags/v0.1.0')) {
+            $state.tagReads++
+            return (@{ object = @{ type = 'tag'; sha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' } } | ConvertTo-Json -Compress)
+        }
+        if ($route.EndsWith('/git/tags/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')) {
+            $state.tagReads++
+            $targetCommit = if ($state.mismatchedTag) { 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' } else { '0123456789abcdef0123456789abcdef01234567' }
+            return (@{ object = @{ type = 'commit'; sha = $targetCommit } } | ConvertTo-Json -Compress)
+        }
+        if ($route.EndsWith('/releases') -and $arguments -contains 'POST') {
+            if ($state.tagReads -lt 2) { throw 'Creation did not verify and peel the remote annotated tag.' }
+            $payloadFile = $arguments[[Array]::IndexOf($arguments, '--input') + 1]
+            $payload = Get-Content -LiteralPath $payloadFile -Raw | ConvertFrom-Json
+            $state.release = @{ id = 1234; tag_name = $payload.tag_name; body = $payload.body; draft = $true; assets = @() }
+            $state.mutations.Add('create')
+            $receipt = $state.release.Clone()
+            if ($state.badReceipt) { $receipt.id = 0 }
+            return ($receipt | ConvertTo-Json -Depth 8 -Compress)
+        }
         $releasePageMatch = [regex]::Match($route, '/releases\?per_page=100&page=(\d+)$')
         if ($releasePageMatch.Success) {
             $state.listReads++
@@ -53,11 +72,6 @@ function global:gh {
     }
     $operation = $arguments[1]
     switch ($operation) {
-        'create' {
-            $notes = $arguments[[Array]::IndexOf($arguments, '--notes-file') + 1]
-            $state.release = @{ tag_name = $arguments[2]; body = [IO.File]::ReadAllText($notes); draft = $true; assets = @() }
-            $state.mutations.Add('create')
-        }
         'upload' {
             $path = $arguments[3]
             $name = [IO.Path]::GetFileName($path)
@@ -86,13 +100,16 @@ try {
         release = $null
         remote = $remote
         listReads = 0
+        tagReads = 0
+        hideDraft = $true
         mutations = [Collections.Generic.List[string]]::new()
     }
     $state = $global:TextDownloaderReleaseTestState
     Set-LocalAssets 'verified fixture archive'
     Invoke-TestRelease
     Assert-Release (-not $state.release.draft -and $state.release.assets.Count -eq 2) 'A new release was not fully published.'
-    Assert-Release ($state.listReads -ge 2) 'The new draft was not found through the authenticated release list after /tags returned404.'
+    Assert-Release ($state.listReads -eq 2) 'Creation incorrectly rediscovered its draft through the stale tag/list index.'
+    Assert-Release ($state.tagReads -eq 2) 'The remote annotated tag was not verified and peeled before creation.'
     Assert-Release ($state.mutations.Count -eq 4) 'The release did not perform exactly create/upload/upload/publish.'
     Assert-Release ($state.latestFlag -eq 'true') 'The first release was not made latest.'
     Invoke-TestRelease
@@ -106,6 +123,7 @@ try {
     Assert-Release ($state.mutations.Count -eq 4 -and (Get-FileHash (Join-Path $remote 'TextDownloader-Windows-x64.zip')).Hash -eq $originalHash) 'A rejected build changed published assets.'
 
     Set-LocalAssets 'verified fixture archive'
+    $state.hideDraft = $false
     $state.release.body = 'Someone else owns this release.'
     $state.release.draft = $true
     $rejected = $false
@@ -122,14 +140,22 @@ try {
     Assert-Release ($state.latestFlag -eq 'false') 'An older late release rolled latest backwards.'
     Assert-Release ($state.listReads -ge 3) 'Resuming a draft did not use the authenticated release list.'
 
-    # Creation must not proceed to upload/publish if its own draft cannot be read.
+    # Invalid creation receipts must never proceed to upload or publication.
     $state.release = $null
     $state.hideDraft = $true
+    $state.badReceipt = $true
     $mutationsBefore = $state.mutations.Count
     $rejected = $false
     try { Invoke-TestRelease } catch { $rejected = $true }
-    Assert-Release ($rejected -and $state.mutations.Count -eq $mutationsBefore + 1 -and $state.release.draft) 'An unconfirmed newly created draft was uploaded or published.'
-    Write-Host 'Release tests: paginated draft lookup after tag404, create, retry, immutable assets, ownership, draft resume, confirmation and latest ordering passed.'
+    Assert-Release ($rejected -and $state.mutations.Count -eq $mutationsBefore + 1 -and $state.release.draft) 'An invalid creation receipt was uploaded or published.'
+    $state.release = $null
+    $state.badReceipt = $false
+    $state.mismatchedTag = $true
+    $mutationsBefore = $state.mutations.Count
+    $rejected = $false
+    try { Invoke-TestRelease } catch { $rejected = $true }
+    Assert-Release ($rejected -and $state.mutations.Count -eq $mutationsBefore) 'A mismatched remote tag allowed release creation.'
+    Write-Host 'Release tests: stale-index creation receipt, annotated tag verification, paginated draft resume, immutable assets, ownership and latest ordering passed.'
 }
 finally {
     Remove-Item Function:gh -ErrorAction SilentlyContinue

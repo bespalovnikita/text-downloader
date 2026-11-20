@@ -63,6 +63,24 @@ function Get-Release([string]$Reference) {
     return ($result -join [Environment]::NewLine | ConvertFrom-Json)
 }
 
+function Confirm-RemoteTag {
+    $referenceJson = Invoke-Gh -Arguments @('api', "repos/$Repository/git/ref/tags/$Tag")
+    $reference = $referenceJson | ConvertFrom-Json
+    $target = $reference.object
+    $visited = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    while ($target.type -eq 'tag') {
+        if ([string]$target.sha -notmatch '^[a-fA-F0-9]{40}$' -or -not $visited.Add([string]$target.sha) -or $visited.Count -gt 16) {
+            throw 'Некорректная цепочка аннотированного тега. Публикация остановлена.'
+        }
+        $tagJson = Invoke-Gh -Arguments @('api', "repos/$Repository/git/tags/$($target.sha)")
+        $annotated = $tagJson | ConvertFrom-Json
+        $target = $annotated.object
+    }
+    if ($target.type -ne 'commit' -or -not [string]::Equals([string]$target.sha, $CommitSha, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Удалённый тег не указывает на проверенный коммит. Публикация остановлена.'
+    }
+}
+
 $temporary = Join-Path ([IO.Path]::GetTempPath()) ('TextDownloader-release-' + [guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($temporary)
 try {
@@ -71,13 +89,24 @@ try {
         throw 'Существующий выпуск не принадлежит этой сборке; он оставлен без изменений.'
     }
     if (-not $release) {
+        Confirm-RemoteTag
         $template = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../.github/RELEASE_TEMPLATE.md') -Raw
-        $notes = Join-Path $temporary 'notes.md'
-        ($template.TrimEnd() + "`n`n" + $marker + "`n") | Set-Content -LiteralPath $notes -Encoding utf8NoBOM
-        [void](Invoke-Gh -Arguments @('release', 'create', $Tag, '--repo', $Repository, '--verify-tag', '--target', $CommitSha,
-            '--draft', '--title', "Text Downloader $Tag", '--notes-file', $notes))
-        $release = Get-Release "tags/$Tag"
-        if (-not $release -or -not $release.draft -or -not ([string]$release.body).Contains($marker)) {
+        $payload = Join-Path $temporary 'create-release.json'
+        [ordered]@{
+            tag_name = $Tag
+            target_commitish = $CommitSha
+            name = "Text Downloader $Tag"
+            body = $template.TrimEnd() + "`n`n" + $marker + "`n"
+            draft = $true
+            prerelease = $false
+        } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $payload -Encoding utf8NoBOM
+        # The mutation response is authoritative. Tag/list lookup can lag after
+        # creation, so do not immediately rediscover the draft through an index.
+        $createdJson = Invoke-Gh -Arguments @('api', '--method', 'POST', "repos/$Repository/releases", '--input', $payload)
+        $release = $createdJson | ConvertFrom-Json
+        if (-not $release -or $release.id -isnot [ValueType] -or $release.id -le 0 -or
+            $release.draft -ne $true -or -not [string]::Equals([string]$release.tag_name, $Tag, [StringComparison]::Ordinal) -or
+            -not ([string]$release.body).Contains($marker)) {
             throw 'Не удалось подтвердить созданный собственный черновик. Загрузка файлов и публикация остановлены.'
         }
     }
