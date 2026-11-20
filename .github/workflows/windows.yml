@@ -1,0 +1,78 @@
+name: Windows build and release
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Build, test and package Windows
+    runs-on: windows-latest
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Read and validate release version
+        id: version
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          [xml]$definition = Get-Content Version.props -Raw
+          $version = [string]$definition.Project.PropertyGroup.Version
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Version.props must contain a stable semantic version.' }
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") {
+            throw 'The release tag must match Version.props.'
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+      - name: Build and run core and real WPF tests
+        shell: pwsh
+        run: ./scripts/build.ps1 -Task Test
+      - name: Publish and launch standalone Windows package
+        shell: pwsh
+        run: ./scripts/build.ps1 -Task Publish -Version '${{ steps.version.outputs.version }}'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TextDownloader-Windows-x64
+          path: |
+            dist/TextDownloader-Windows-x64.zip
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish verified Windows release
+    if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
+    needs: windows
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: text-downloader-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: TextDownloader-Windows-x64
+          path: dist/release-assets
+      - name: Publish release without changing existing published assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: ./scripts/publish-release.ps1 -Repository $env:GITHUB_REPOSITORY -Tag $env:RELEASE_TAG -CommitSha $env:GITHUB_SHA -AssetDirectory dist/release-assets

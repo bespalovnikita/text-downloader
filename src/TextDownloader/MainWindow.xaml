@@ -1,0 +1,90 @@
+<Window x:Class="TextDownloader.MainWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:core="clr-namespace:TextDownloader.Core;assembly=TextDownloader.Core"
+ Title="Text Downloader" Width="1450" Height="860" MinWidth="1060" MinHeight="650"
+ Background="#111318" Foreground="#EEF1F8" FontFamily="Segoe UI"
+ WindowStartupLocation="CenterScreen" AllowDrop="True"
+ Drop="OnDrop" DragOver="OnDragOver" Closing="OnClosing" StateChanged="OnStateChanged">
+ <Window.Resources>
+  <ResourceDictionary>
+   <ResourceDictionary.MergedDictionaries><ResourceDictionary Source="Styles.xaml" /></ResourceDictionary.MergedDictionaries>
+   <Style x:Key="PanelTitle" TargetType="TextBlock"><Setter Property="FontSize" Value="18"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Margin" Value="0,0,0,12"/></Style>
+   <Style TargetType="ListBox"><Setter Property="Background" Value="{StaticResource PanelBrush}"/><Setter Property="Foreground" Value="#EEF1F8"/><Setter Property="BorderThickness" Value="0"/></Style>
+   <Style TargetType="ListBoxItem"><Setter Property="Padding" Value="7"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Foreground" Value="#EEF1F8"/></Style>
+  </ResourceDictionary>
+ </Window.Resources>
+ <Grid Margin="16">
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <Grid Grid.Row="0" Margin="0,0,0,12">
+   <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+   <StackPanel><TextBlock Text="Text Downloader" FontSize="25" FontWeight="SemiBold"/><TextBlock Text="Все страницы рассказа → электронная книга" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0"/></StackPanel>
+   <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"><Button x:Name="HistoryButton" Content="История…" Click="OnHistory"/><Button x:Name="UpdateButton" Content="Проверить обновление" Click="OnUpdate"/></StackPanel>
+  </Grid>
+  <Grid Grid.Row="1" Margin="0,0,0,14">
+   <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+   <TextBox x:Name="UrlInput" MinHeight="38" VerticalContentAlignment="Center" ToolTip="Одна или несколько ссылок на страницы чтения Sefan" KeyDown="OnUrlKeyDown" AutomationProperties.Name="Ссылка на рассказ"/>
+   <Button x:Name="PasteButton" Grid.Column="1" Content="Вставить" Click="OnPaste"/>
+   <Button x:Name="AddButton" Grid.Column="2" Content="+ Добавить" Background="{StaticResource AccentBrush}" Click="OnAdd"/>
+   <Button x:Name="LoadListButton" Grid.Column="3" Content="Открыть список…" Click="OnLoadList"/>
+  </Grid>
+  <Grid Grid.Row="2">
+   <Grid.ColumnDefinitions><ColumnDefinition x:Name="QueueColumn" Width="350" MinWidth="250"/><ColumnDefinition Width="8"/><ColumnDefinition Width="*" MinWidth="320"/><ColumnDefinition Width="8"/><ColumnDefinition x:Name="PreviewColumn" Width="350" MinWidth="250"/></Grid.ColumnDefinitions>
+   <Border Background="{StaticResource PanelBrush}" CornerRadius="12" Padding="12">
+    <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+     <DockPanel><TextBlock Style="{StaticResource PanelTitle}" Text="Очередь"/><TextBlock Text="{Binding QueueCountText}" HorizontalAlignment="Right" Foreground="{StaticResource MutedBrush}"/></DockPanel>
+     <ListBox x:Name="QueueList" Grid.Row="1" ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem,Mode=TwoWay}" SelectionMode="Extended" MouseDoubleClick="OnQueueDoubleClick">
+      <ListBox.ItemTemplate><DataTemplate>
+       <StackPanel><TextBlock Text="{Binding DisplayTitle}" TextWrapping="Wrap" FontWeight="SemiBold"/><TextBlock Text="{Binding StatusText}" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0"/><TextBlock Text="{Binding Url}" Foreground="{StaticResource MutedBrush}" FontSize="11" TextTrimming="CharacterEllipsis" ToolTip="{Binding Url}"/></StackPanel>
+      </DataTemplate></ListBox.ItemTemplate>
+     </ListBox>
+     <WrapPanel Grid.Row="2" Margin="0,8,0,0"><Button x:Name="RepeatSelectedButton" Content="Повторить выбранные" Click="OnRepeatSelected" IsEnabled="{Binding CanEditSettings}"/><Button x:Name="RemoveButton" Content="Удалить выбранные" Click="OnRemove"/><Button x:Name="ClearCompletedButton" Content="Убрать готовые" Click="OnClearCompleted"/></WrapPanel>
+    </Grid>
+   </Border>
+   <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch" Background="Transparent" DragCompleted="OnSplitterChanged"/>
+   <Border Grid.Column="2" Background="{StaticResource PanelBrush}" CornerRadius="12" Padding="12">
+    <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+     <TextBlock Style="{StaticResource PanelTitle}" Text="Загрузки"/>
+     <DataGrid x:Name="DownloadsGrid" Grid.Row="1" ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem,Mode=TwoWay}" IsReadOnly="True">
+      <DataGrid.Columns>
+       <DataGridTextColumn Header="Рассказ" Binding="{Binding DisplayTitle}" Width="*" ElementStyle="{StaticResource GridTextStyle}"/>
+       <DataGridTextColumn Header="Страницы" Binding="{Binding PageProgress}" Width="85" ElementStyle="{StaticResource GridTextStyle}"/>
+       <DataGridTextColumn Header="Статус" Binding="{Binding StatusText}" Width="85" ElementStyle="{StaticResource GridTextStyle}"/>
+      </DataGrid.Columns>
+     </DataGrid>
+     <StackPanel Grid.Row="2" Margin="0,10,0,0"><ProgressBar x:Name="CurrentProgress" Height="5" Minimum="0" Maximum="100" Value="{Binding ActiveItem.Percent}"/><TextBlock x:Name="StatusBlock" Text="{Binding CurrentStatus}" TextWrapping="Wrap" Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}"/></StackPanel>
+     <Expander Grid.Row="3" Header="Журнал" Foreground="#EEF1F8" Margin="0,12,0,0">
+      <Grid><Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions><TextBox x:Name="JournalBox" Text="{Binding JournalText,Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" Height="140" VerticalScrollBarVisibility="Auto"/><Button Grid.Row="1" Content="Сохранить журнал…" HorizontalAlignment="Right" Click="OnSaveJournal"/></Grid>
+     </Expander>
+    </Grid>
+   </Border>
+   <GridSplitter Grid.Column="3" Width="6" HorizontalAlignment="Stretch" Background="Transparent" DragCompleted="OnSplitterChanged"/>
+   <Border Grid.Column="4" Background="{StaticResource PanelBrush}" CornerRadius="12" Padding="12">
+    <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+     <TextBlock Style="{StaticResource PanelTitle}" Text="Предпросмотр"/>
+     <TextBlock Grid.Row="1" x:Name="PreviewTitleText" Text="{Binding PreviewTitle}" TextWrapping="Wrap" FontSize="18" FontWeight="SemiBold"/>
+     <TextBlock Grid.Row="2" Text="{Binding PreviewMetadata}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,8,0,12"/>
+     <TextBlock Grid.Row="3" Text="{Binding PreviewStatus}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"/>
+     <TextBox Grid.Row="4" x:Name="PreviewBody" Text="{Binding PreviewText,Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Background="Transparent" BorderThickness="0" Padding="0"/>
+     <WrapPanel Grid.Row="5" Margin="0,10,0,0"><Button x:Name="PreviewButton" Content="Обновить сведения" Click="OnPreview"/><Button x:Name="OpenBookButton" Content="Открыть книгу" Click="OnOpenBook"/><Button Content="Показать в папке" Click="OnShowBook"/></WrapPanel>
+    </Grid>
+   </Border>
+  </Grid>
+  <Border Grid.Row="3" Background="{StaticResource PanelBrush}" CornerRadius="12" Padding="12" Margin="0,12,0,0">
+   <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="200"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+    <TextBlock Text="Формат" VerticalAlignment="Center" Margin="0,0,10,0"/>
+    <ComboBox x:Name="FormatCombo" Grid.Column="1" SelectedValuePath="Tag" SelectedValue="{Binding Format,Mode=TwoWay}" IsEnabled="{Binding CanEditSettings}">
+     <ComboBoxItem Tag="{x:Static core:BookFormat.Both}" Content="EPUB + FB2"/><ComboBoxItem Tag="{x:Static core:BookFormat.Epub}" Content="EPUB"/><ComboBoxItem Tag="{x:Static core:BookFormat.Fb2}" Content="FB2"/>
+    </ComboBox>
+    <TextBlock Grid.Column="2" Text="Папка" VerticalAlignment="Center" Margin="16,0,10,0"/>
+    <TextBox x:Name="OutputInput" Grid.Column="3" Text="{Binding OutputDirectory,UpdateSourceTrigger=PropertyChanged}" IsReadOnly="{Binding IsBusy}" VerticalContentAlignment="Center"/>
+    <Button x:Name="BrowseButton" Grid.Column="4" Content="…" Click="OnBrowse" IsEnabled="{Binding CanEditSettings}" ToolTip="Выбрать папку книг"/>
+    <WrapPanel Grid.Row="1" Grid.ColumnSpan="5" Margin="0,8,0,0"><CheckBox x:Name="AdultCheck" Content="Мне исполнилось 18 лет — подтверждать предупреждение Sefan" IsChecked="{Binding ConfirmAdult,Mode=TwoWay}" IsEnabled="{Binding CanEditSettings}"/><CheckBox x:Name="RefreshCheck" Content="Скачать заново (без кеша)" IsChecked="{Binding RefreshCache,Mode=TwoWay}" IsEnabled="{Binding CanEditSettings}" Margin="18,5,0,5"/><CheckBox Content="Сворачивать в трей" IsChecked="{Binding MinimizeToTray,Mode=TwoWay}" Margin="18,5,0,5"/></WrapPanel>
+   </Grid>
+  </Border>
+  <Grid Grid.Row="4" Margin="0,10,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+   <WrapPanel><Button x:Name="StartButton" Content="{Binding StartLabel}" Background="{StaticResource AccentBrush}" Click="OnStart" IsEnabled="{Binding CanStart}"/><Button x:Name="PauseButton" Content="Пауза" Click="OnPause" IsEnabled="{Binding IsBusy}"/><Button x:Name="CancelButton" Content="Отменить загрузку" Click="OnCancel" IsEnabled="{Binding IsBusy}"/><Button x:Name="RetryButton" Content="Повторить ошибки" Click="OnRetry" IsEnabled="{Binding CanEditSettings}"/></WrapPanel>
+   <Button Grid.Column="1" x:Name="OpenFolderButton" Content="Открыть папку книг" Click="OnOpenFolder"/>
+  </Grid>
+ </Grid>
+</Window>
