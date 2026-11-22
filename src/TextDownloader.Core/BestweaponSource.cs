@@ -76,22 +76,16 @@ public sealed class BestweaponSource : IBookStorySource
         var requested = Normalize(url);
         var cache = Path.Combine(Path.GetFullPath(cacheDirectory), "bestweapon", Hash(Encoding.UTF8.GetBytes(requested.AbsoluteUri)).ToLowerInvariant());
         progress?.Report(new DownloadProgress(0, null, "Читаем оглавление выбранной части Bestweapon…"));
-        var selected = await GetPostAsync(requested, cache, refresh, cancellationToken).ConfigureAwait(false);
-        if (selected.Parts.Count == 0 || selected.PartNumber > selected.Parts.Count)
-            throw new InvalidDataException("Не найдено полное оглавление Bestweapon: невозможно подтвердить все предыдущие части.");
+        var selected = await GetPostAsync(requested, cache, refresh, ValidateSelected, cancellationToken).ConfigureAwait(false);
         var plan = selected.Parts.Take(selected.PartNumber).ToArray();
-        if (plan.Length == 0 || plan.Length > MaxParts)
-            throw new InvalidDataException("Недопустимое количество частей рассказа.");
-        if (plan.Length > 1 && string.IsNullOrWhiteSpace(selected.Author))
-            throw new InvalidDataException("Не указан автор серии; нельзя подтвердить принадлежность всех частей.");
         progress?.Report(new DownloadProgress(0, plan.Length, $"Найдено частей до выбранной включительно: {plan.Length}."));
         var chapters = new List<BookChapter>(plan.Length);
         long characters = 0;
         foreach (var part in plan)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var post = part.Url == selected.Url ? selected : await GetPostAsync(part.Url, cache, refresh, cancellationToken).ConfigureAwait(false);
-            ValidateAgainstPlan(post, selected, part, plan);
+            var post = part.Url == selected.Url ? selected : await GetPostAsync(part.Url, cache, refresh,
+                candidate => ValidateAgainstPlan(candidate, selected, part, plan), cancellationToken).ConfigureAwait(false);
             characters += post.Paragraphs.Sum(p => (long)p.Length);
             if (characters > MaxStoryCharacters) throw new InvalidDataException("Текст превышает допустимый объём одной книги.");
             chapters.Add(new BookChapter(part.Title, post.Url, post.Paragraphs.ToArray()));
@@ -252,17 +246,37 @@ public sealed class BestweaponSource : IBookStorySource
                 throw new InvalidDataException("Оглавления частей Bestweapon противоречат друг другу.");
     }
 
-    private async Task<BestweaponPost> GetPostAsync(Uri url, string cache, bool refresh, CancellationToken token)
+    private static void ValidateSelected(BestweaponPost selected)
+    {
+        if (selected.Parts.Count == 0 || selected.PartNumber > selected.Parts.Count)
+            throw new InvalidDataException("Не найдено полное оглавление Bestweapon: невозможно подтвердить все предыдущие части.");
+        if (selected.PartNumber > MaxParts)
+            throw new InvalidDataException("Недопустимое количество частей рассказа.");
+        if (selected.PartNumber > 1 && string.IsNullOrWhiteSpace(selected.Author))
+            throw new InvalidDataException("Не указан автор серии; нельзя подтвердить принадлежность всех частей.");
+        ValidateAgainstPlan(selected, selected, selected.Parts[selected.PartNumber - 1], selected.Parts);
+    }
+
+    private async Task<BestweaponPost> GetPostAsync(Uri url, string cache, bool refresh, Action<BestweaponPost> validate, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
         string path = Path.Combine(cache, "post_" + PostPath.Match(url.AbsolutePath).Groups["id"].Value + ".json");
         if (!refresh)
         {
             var cached = await ReadCacheAsync(path, url, token).ConfigureAwait(false);
-            if (cached is not null) return cached;
+            if (cached is not null)
+            {
+                try
+                {
+                    validate(cached);
+                    return cached;
+                }
+                catch (InvalidDataException) { }
+            }
         }
         var post = ParsePost(await ReadHtmlAsync(url, token).ConfigureAwait(false), url);
-        if (post.Parts.Count > 0) await WriteCacheAsync(path, post, token).ConfigureAwait(false);
+        validate(post);
+        await WriteCacheAsync(path, post, token).ConfigureAwait(false);
         return post;
     }
 

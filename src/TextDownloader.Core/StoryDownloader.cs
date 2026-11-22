@@ -71,23 +71,27 @@ public sealed class StoryDownloader
                 throw new InvalidDataException("Повтор страницы или превышен предел страниц; книга не создана.");
             var number = pages.Count + 1;
             var page = refresh ? null : await ReadCacheAsync(cache, number, first, next, cancellationToken).ConfigureAwait(false);
-            var wasCached = page is not null;
-            page ??= await _source.GetPageAsync(next, confirmAdult, cancellationToken).ConfigureAwait(false);
-            ValidatePage(page, first, next, number);
-            if (page.TotalPages is { } total)
+            string? fingerprint = null;
+            if (page is not null)
             {
-                if (expectedTotal is not null && total != expectedTotal)
-                    throw new InvalidDataException("Число страниц изменилось. Включите загрузку заново без кеша.");
-                expectedTotal = total;
+                try { fingerprint = ValidateChainPage(page, expectedTotal, fingerprints); }
+                catch (InvalidDataException) { page = null; }
             }
-            if (expectedTotal is not null && (number > expectedTotal || (number == expectedTotal && page.NextUrl is not null)))
-                throw new InvalidDataException("Навигация не соответствует общему числу страниц.");
-            if (!fingerprints.Add(Hash(Encoding.UTF8.GetBytes(page.Fragment))))
-                throw new InvalidDataException("Сайт повторил ранее загруженный текст; книга не создана.");
+            var wasCached = page is not null;
+            if (page is null)
+            {
+                // Once a gap is found, only the validated prefix belongs to this run.
+                refresh = true;
+                page = await _source.GetPageAsync(next, confirmAdult, cancellationToken).ConfigureAwait(false);
+                ValidatePage(page, first, next, number);
+                fingerprint = ValidateChainPage(page, expectedTotal, fingerprints);
+            }
             characters += page.Fragment.Length;
             if (characters > MaxStoryCharacters) throw new InvalidDataException("Текст превышает допустимый объём одного рассказа.");
-            pages.Add(page);
             if (!wasCached) await WriteCacheAsync(cache, page, cancellationToken).ConfigureAwait(false);
+            expectedTotal ??= page.TotalPages;
+            fingerprints.Add(fingerprint!);
+            pages.Add(page);
             progress?.Report(new DownloadProgress(number, expectedTotal,
                 $"Страница {number}{(expectedTotal is { } count ? " из " + count : "")}: {(wasCached ? "из кеша" : "загружена")}"));
             next = page.NextUrl;
@@ -106,6 +110,19 @@ public sealed class StoryDownloader
         // No separator here: a page can break inside a word or before punctuation.
         var text = string.Concat(pages.Select(p => p.Fragment.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n')));
         return Regex.Split(text, @"\n+").Select(SefanSource.CleanText).Where(p => !string.IsNullOrWhiteSpace(p)).ToArray();
+    }
+
+    private static string ValidateChainPage(StoryPage page, int? expectedTotal, HashSet<string> fingerprints)
+    {
+        if (expectedTotal is not null && page.TotalPages is not null && page.TotalPages != expectedTotal)
+            throw new InvalidDataException("Число страниц изменилось. Включите загрузку заново без кеша.");
+        int? total = expectedTotal ?? page.TotalPages;
+        if (page.NextUrl is null ? total != page.Number : total is not null && page.Number >= total)
+            throw new InvalidDataException("Не удалось подтвердить полноту: число страниц не соответствует навигации.");
+        string fingerprint = Hash(Encoding.UTF8.GetBytes(page.Fragment));
+        if (fingerprints.Contains(fingerprint))
+            throw new InvalidDataException("Сайт повторил ранее загруженный текст; книга не создана.");
+        return fingerprint;
     }
 
     private static void ValidatePage(StoryPage page, Uri first, Uri requested, int expectedNumber)
@@ -140,7 +157,7 @@ public sealed class StoryDownloader
             ValidatePage(record.Page, first, requested, number);
             return record.Page;
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException or ArgumentException or NotSupportedException)
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or JsonException or ArgumentException or NotSupportedException)
         {
             // A cache is replaceable. A corrupt record is fetched again, not treated as completed work.
             return null;

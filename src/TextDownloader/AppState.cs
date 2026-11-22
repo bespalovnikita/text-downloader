@@ -18,6 +18,8 @@ public sealed class QueueItem : INotifyPropertyChanged
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Url { get; set; } = "";
+    public Guid? CacheRunId { get; set; }
+    public bool ResumeDownload { get; set; }
     private string _title = "";
     public string Title { get => _title; set { _title = value; Changed(); Changed(nameof(DisplayTitle)); } }
     [JsonIgnore] public string DisplayTitle => string.IsNullOrWhiteSpace(Title) ? Url : Title;
