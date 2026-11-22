@@ -42,6 +42,14 @@ dotnet build tests/TextDownloader.UiTests -c Release -p:EnableWindowsTargeting=t
 Сценарии с WPF-контролами и опубликованным EXE выполняются в Windows.
 Их запускает workflow **Windows build and release** в PR.
 
+## Ветки после слияния
+
+GitHub Actions сохраняет результат каждого слияния в `main` в ветке
+`merge-snapshots/<полный SHA>`. При слиянии через squash или rebase
+используется итоговый коммит, который GitHub указывает для PR.
+Ветка остаётся доступной после удаления рабочей ветки. Повторный запуск
+проверяет существующий указатель, а публикация по-прежнему запускается тегом.
+
 ## Версия и выпуск
 
 Версия хранится в `Version.props`. GitHub Actions собирает и проверяет Windows
