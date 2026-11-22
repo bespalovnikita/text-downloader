@@ -299,6 +299,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 if (token.IsCancellationRequested) break;
                 if (!Items.Contains(item)) continue;
                 ActiveItem = item;
+                if (refresh && !item.ResumeDownload && item.Status != QueueStatus.Paused)
+                    item.CacheRunId = Guid.NewGuid();
+                item.ResumeDownload = true;
+                string cache = item.CacheRunId is { } runId
+                    ? Path.Combine(_store.CacheDirectory, "refresh", runId.ToString("N"))
+                    : _store.CacheDirectory;
                 item.Status = QueueStatus.Running;
                 item.Message = "Получаем текст…";
                 CurrentStatus = item.DisplayTitle;
@@ -317,8 +323,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     var result = await Task.Run(async () =>
                     {
                         using IStorySource source = _sourceFactory(pageDelay);
-                        var downloader = new StoryDownloader(source, _store.CacheDirectory);
-                        BookDocument book = await downloader.DownloadAsync(new Uri(item.Url), confirmAdult, refresh, progress, token);
+                        var downloader = new StoryDownloader(source, cache);
+                        BookDocument book = await downloader.DownloadAsync(new Uri(item.Url), confirmAdult, false, progress, token);
                         token.ThrowIfCancellationRequested();
                         IReadOnlyList<string> files = await BookExporter.ExportAsync(book, directory, format, token);
                         return (Book: book, Files: files);
@@ -332,6 +338,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     item.Message = $"Готово: {result.Files.Count} файл(а).";
                     var entry = new HistoryEntry { Title = result.Book.Title, Url = item.Url, CompletedAt = DateTimeOffset.UtcNow, Pages = result.Book.PageCount, Files = result.Files.ToList() };
                     History.Insert(0, entry);
+                    item.ResumeDownload = false;
                     item.Status = QueueStatus.Completed;
                     try { await SaveOrThrowAsync(); }
                     catch
@@ -460,7 +467,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void OnRetry(object sender, RoutedEventArgs e)
     {
         if (IsUpdating || _closing) return;
-        foreach (QueueItem item in Items.Where(q => q.Status is QueueStatus.Failed or QueueStatus.Cancelled)) { item.Status = QueueStatus.Queued; item.Message = "Повторная загрузка готова к запуску."; }
+        foreach (QueueItem item in Items.Where(q => q.Status is QueueStatus.Failed or QueueStatus.Cancelled))
+        {
+            item.ResumeDownload = true;
+            item.Status = QueueStatus.Queued;
+            item.Message = "Задание продолжится с первой незагруженной страницы.";
+        }
         CurrentStatus = "Нажмите «Скачать очередь», чтобы повторить задания.";
         ScheduleSave();
     }
@@ -471,6 +483,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (selected.Length == 0 && SelectedItem is not null) selected = new[] { SelectedItem };
         foreach (QueueItem item in selected)
         {
+            item.ResumeDownload = false;
             item.Status = QueueStatus.Queued;
             item.Message = "Повторная загрузка готова к запуску. Прежние книги сохранены.";
         }

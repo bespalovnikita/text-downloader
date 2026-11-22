@@ -35,6 +35,7 @@ internal static class Program
             ("Complete chain joins words and punctuation without page headings", CompleteStory),
             ("Missing, skipped, duplicated and inconsistent pages fail", IncompleteStories),
             ("Cancellation and corrupt cache cannot produce false success", CancellationAndCache),
+            ("Resuming reuses exactly the validated prefix after a page failure", ResumeAfterPageFailure),
             ("Preview does not download the entire story", Preview),
             ("Bestweapon URL scope and current-post-only preview", BestweaponTests.PreviewAsync),
             ("Bestweapon orders all preceding chapters and excludes future parts", BestweaponTests.OrderedSeriesAsync),
@@ -489,6 +490,29 @@ internal static class Program
         Equal(1, activeSource.Calls.Count);
         var resumed = await active.DownloadAsync(Source, false, false, null, CancellationToken.None);
         Equal(2, resumed.PageCount);
+    }
+
+    private static async Task ResumeAfterPageFailure()
+    {
+        using var folder = new TemporaryDirectory();
+        const int total = 100;
+        var pages = Enumerable.Range(1, total).ToDictionary(PageUrl, number =>
+            PageHtml($"Страница {number}.<br>", next: number < total ? number + 1 : null, total: total));
+        pages[PageUrl(21)] = PageHtml("Неполная страница.");
+        using (var first = new FakeSource(pages))
+        {
+            await ThrowsAsync(() => new StoryDownloader(first, folder.Path)
+                .DownloadAsync(Source, false, true, null, CancellationToken.None));
+            Sequence(Enumerable.Range(1, 21).Select(PageUrl), first.Calls);
+            Equal(20, Directory.GetFiles(folder.Path, "*.json", SearchOption.AllDirectories).Length);
+        }
+
+        pages[PageUrl(21)] = PageHtml("Страница 21.<br>", next: 22, total: total);
+        using var resumed = new FakeSource(pages);
+        var book = await new StoryDownloader(resumed, folder.Path)
+            .DownloadAsync(Source, false, false, null, CancellationToken.None);
+        Sequence(Enumerable.Range(21, total - 20).Select(PageUrl), resumed.Calls);
+        Sequence(Enumerable.Range(1, total).Select(number => $"Страница {number}."), book.Paragraphs);
     }
 
     private static async Task Preview()

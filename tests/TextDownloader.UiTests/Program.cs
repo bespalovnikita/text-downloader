@@ -63,6 +63,7 @@ internal static class Program
 
         // Stop in a real in-flight request. No partial book or success is allowed.
         network.HoldSecondPage = true;
+        window.RefreshCache = true;
         Click(window, "StartButton");
         await ReachedSecondPageAsync(window, network);
         Click(window, "PauseButton");
@@ -76,7 +77,8 @@ internal static class Program
         Click(window, "StartButton");
         await window.ActiveSession.WaitAsync(TimeSpan.FromSeconds(10));
         Assert(window.Items[0].Status == QueueStatus.Completed, "Resume did not finish: " + window.Items[0].Message);
-        Assert(network.PageOneCalls == firstPageCalls, "Resume re-downloaded first page instead of cache");
+        Assert(network.PageOneCalls == firstPageCalls, "Resume re-downloaded the first page of a fresh download");
+        window.RefreshCache = false;
         Assert(window.Items[0].Files.Count == 2 && window.Items[0].Files.All(File.Exists), "Both formats not published");
         Assert(window.History.Count == 1 && window.History[0].Pages == 2, "Success history");
         string fb2 = window.Items[0].Files.Single(file => file.EndsWith(".fb2"));
