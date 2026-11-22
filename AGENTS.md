@@ -1,17 +1,76 @@
 # Text Downloader
 
-Windows 10/11 x64 desktop application, derived from the Windows UI and patterns of
-bespalovnikita/video-downloader. The original repository is reference-only.
+Text Downloader — приложение Windows 10/11 x64 на C#, .NET 8 и WPF.
+Оно собирает рассказы и циклы Sefan и Bestweapon в EPUB 3 и FB2.
+Исходный Video Downloader используется как справочный проект.
+Профиль, мьютекс, ресурсы и обновления принадлежат Text Downloader.
 
-- App: C# / .NET 8 / WPF, `src/TextDownloader`. No Python or PowerShell runtime dependency.
-- Download/extraction/export engine: cross-platform `src/TextDownloader.Core`.
-- Tests: executable assertions in `tests/TextDownloader.Core.Tests`; real STA/WPF
-  scenarios in `tests/TextDownloader.UiTests`, run on Windows.
-- All network and expensive I/O must be asynchronous and cancellable, outside UI work.
-- Source adapters must verify a complete, ordered story; cached pages do not prove success.
-- EPUB/FB2 export must preserve text, validate files and publish atomically without
-  overwriting unrelated files. Only successfully published results enter history.
-- State, mutex, updates and resources belong to TextDownloader, never VideoDownloader.
-- Secrets, actual downloaded stories, user profiles and build outputs must not enter Git.
-- Build/Test/Publish entry point: `scripts/build.ps1`; Windows CI must pass before release.
-- Keep documentation in Russian, describe implemented behavior and limitations accurately.
+## Где менять код
+
+| Область | Файлы |
+| --- | --- |
+| Очередь, предпросмотр, настройки и восстановление | `src/TextDownloader/MainWindow.xaml`, `MainWindow.xaml.cs`, `AppState.cs` |
+| Маршрутизация источников и интервал запросов | `src/TextDownloader.Core/SupportedStorySource.cs`, `PageRequestThrottle.cs` |
+| Нумерация, проверка страниц, кеш и точки продолжения | `src/TextDownloader.Core/StoryDownloader.cs`, `Models.cs` |
+| HTML Sefan и сборка цикла | `SefanSource.cs`, `SefanSource.Contents.cs`, `StoryDownloader.Sefan.cs` в проекте Core |
+| Разбор публикаций и оглавлений Bestweapon | `src/TextDownloader.Core/BestweaponSource.cs` |
+| Сборка, проверка и атомарная публикация книг | `src/TextDownloader.Core/BookExporter.cs` |
+| Обновления приложения | `Updates/` в проектах WPF и Core, `scripts/published-update-smoke.ps1` |
+
+## Контракты загрузки
+
+- Весь сетевой и тяжёлый ввод-вывод выполняйте асинхронно и с поддержкой
+  отмены, вне UI. Сохраняйте задержку между началами запросов к каждому сайту
+  для предпросмотра и очереди. Кеш читается без сетевой задержки.
+- Проверяйте адреса чтения, перенаправления, формы и ссылки оглавления в
+  соответствующем адаптере. Подтверждение возраста требует явного выбора
+  пользователя. Для Sefan числовой стиль отображения и маршрут `i` могут быть
+  вариантами адреса одной части. У повторной попытки через `i` отдельный кеш.
+- На Sefan выбирайте части по связанному оглавлению
+  `vse-chasti/<имя>.html`. Список `select[name=s]` в форме рядом с
+  оглавлением содержит имена файлов частей. Отдельное оглавление служит
+  запасным источником. Порядок берётся из номеров или порядка списка.
+  Проверяйте каждую часть тем же маршрутом, что самостоятельный рассказ.
+  На Bestweapon собирается префикс цикла до выбранной публикации включительно.
+- Страница считается завершённой после проверки и записи в кеш. Перепроверьте
+  последовательность, отпечатки и полноту даже при отсутствии сетевых запросов.
+  Возобновление должно использовать последовательный проверенный префикс.
+  Новая загрузка без кеша получает отдельный `CacheRunId` в сохранённой очереди.
+  Повтор ошибок, пауза и перезапуск продолжают эту же попытку.
+- `DownloadCheckpoint` хранит начало маршрута, последний успешный и ожидаемый
+  адреса. Принятый вручную адрес обязан сохранять идентичность страницы.
+  Проверка очереди и экспорт должны одинаково работать при автоматическом и
+  ручном продолжении. Сохранения старых версий могут не содержать этих полей.
+- `BookDocument.Chapters` содержит упорядоченные логические главы. Склеивайте
+  страницы внутри части без вставки лишних символов в середину слова.
+  Проверяйте структуру и текст EPUB/FB2 до атомарной публикации. Сохраняйте
+  существующие файлы. В историю добавляйте только опубликованные книги.
+- Не включайте в коммиты реальные тексты рассказов, профили, ключи, журналы
+  или результаты сборки. Для тестов создавайте короткие синтетические
+  фрагменты с нужной структурой HTML. Кеш и профиль пользователя не входят
+  в пакет обновления.
+
+## Проверки
+
+Запустите проверки движка из корня репозитория с .NET 8.
+
+```bash
+dotnet run --project tests/TextDownloader.Core.Tests -c Release
+```
+
+Для изменения адаптера проверяйте неверный источник или порядок, а для
+продолжения — список реально запрошенных страниц после сбоя. Сценарии
+`tests/TextDownloader.UiTests` проверяют реальные WPF-контролы в STA-процессе.
+При изменении установки используйте проверки с запуском опубликованного EXE.
+
+В Windows запустите тесты и сборку пакета.
+
+```powershell
+pwsh -NoProfile -File scripts/build.ps1 -Task Test
+pwsh -NoProfile -File scripts/build.ps1 -Task Publish
+```
+
+GitHub Actions запускает обе команды для PR. Перед выпуском проверьте
+Windows CI и соответствие тега файлу `Version.props`. Пишите документацию
+по-русски и сверяйте имена действий с интерфейсом.
+[Руководство пользователя](docs/USAGE.md) · [Сборка и выпуск](docs/DEVELOPMENT.md)
