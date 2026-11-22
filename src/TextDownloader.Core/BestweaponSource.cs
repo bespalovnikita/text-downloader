@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
@@ -23,8 +22,7 @@ public sealed class BestweaponSource : IBookStorySource
     private readonly HttpClient _client;
     private readonly bool _ownsClient;
     private readonly TimeSpan _requestInterval;
-    private readonly SemaphoreSlim _requestGate = new(1, 1);
-    private long? _lastRequest;
+    private readonly PageRequestThrottle _requestThrottle;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private static readonly Regex PostPath = new(@"^/post_(?<id>[1-9][0-9]*)/?$", RegexOptions.CultureInvariant | RegexOptions.Compiled);
     private static readonly Regex NumberedTitle = new(
@@ -38,10 +36,14 @@ public sealed class BestweaponSource : IBookStorySource
     static BestweaponSource() => Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
     public BestweaponSource(HttpClient? client = null, TimeSpan? requestInterval = null)
+        : this(client, requestInterval ?? TimeSpan.FromSeconds(1), new PageRequestThrottle()) { }
+
+    internal BestweaponSource(HttpClient? client, TimeSpan requestInterval, PageRequestThrottle requestThrottle)
     {
-        _requestInterval = requestInterval ?? TimeSpan.FromSeconds(1);
-        if (_requestInterval < TimeSpan.Zero || _requestInterval > TimeSpan.FromSeconds(60))
+        if (requestInterval < TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(requestInterval));
+        _requestInterval = requestInterval;
+        _requestThrottle = requestThrottle;
         _ownsClient = client is null;
         _client = client ?? new HttpClient(new HttpClientHandler
         {
@@ -334,15 +336,9 @@ public sealed class BestweaponSource : IBookStorySource
                 var current = requested;
                 for (int redirect = 0; redirect <= 5; redirect++)
                 {
-                    await _requestGate.WaitAsync(token).ConfigureAwait(false);
+                    await _requestThrottle.EnterAsync(_requestInterval, token).ConfigureAwait(false);
                     try
                     {
-                        if (_lastRequest is { } last)
-                        {
-                            var delay = _requestInterval - Stopwatch.GetElapsedTime(last);
-                            if (delay > TimeSpan.Zero) await Task.Delay(delay, token).ConfigureAwait(false);
-                        }
-                        _lastRequest = Stopwatch.GetTimestamp();
                         using var request = new HttpRequestMessage(HttpMethod.Get, current);
                         request.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (compatible; TextDownloader/0.1)");
                         request.Headers.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml");
@@ -381,7 +377,7 @@ public sealed class BestweaponSource : IBookStorySource
                         if (string.IsNullOrWhiteSpace(html)) throw new HttpRequestException("Bestweapon вернул пустую страницу.");
                         return html;
                     }
-                    finally { _requestGate.Release(); }
+                    finally { _requestThrottle.Exit(); }
                 }
                 throw new InvalidDataException("Не удалось завершить перенаправления Bestweapon.");
             }
@@ -421,6 +417,5 @@ public sealed class BestweaponSource : IBookStorySource
     public void Dispose()
     {
         if (_ownsClient) _client.Dispose();
-        _requestGate.Dispose();
     }
 }
