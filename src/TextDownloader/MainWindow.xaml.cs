@@ -7,6 +7,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -60,6 +61,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         set
         {
             if (!Set(ref _selectedItem, value)) return;
+            Changed(nameof(CanCopySelectedUrl));
             RefreshPageRecovery();
             if (_initialized && !IsUpdating) _previewTask = PreviewSelectedAsync(value);
         }
@@ -92,12 +94,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (!Set(ref _isUpdating, value)) return;
             Changed(nameof(CanStart)); Changed(nameof(CanEditSettings));
-            Changed(nameof(CanReceiveInput)); Changed(nameof(CanOpenUpdates));
+            Changed(nameof(CanReceiveInput)); Changed(nameof(CanCopySelectedUrl)); Changed(nameof(CanOpenUpdates));
         }
     }
     public bool CanStart => _initialized && _validPageDelay && !IsBusy && !IsUpdating && !_closing && _store.CanWrite && !_saveFailed;
     public bool CanEditSettings => !IsBusy && !IsUpdating && !_closing;
     public bool CanReceiveInput => _initialized && !IsUpdating && !_closing;
+    public bool CanCopySelectedUrl => CanReceiveInput && SelectedItem is not null;
     public bool CanOpenUpdates => _initialized && !IsUpdating && !_closing;
     public string StartLabel => Items.Any(q => q.Status == QueueStatus.Paused) ? "▶ Продолжить очередь" : "▶ Скачать очередь";
     public string QueueCountText => $"{Items.Count} · готово {Items.Count(q => q.Status == QueueStatus.Completed)}";
@@ -184,7 +187,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             _initialized = true;
             Changed(nameof(CanStart));
-            Changed(nameof(CanReceiveInput)); Changed(nameof(CanOpenUpdates));
+            Changed(nameof(CanReceiveInput)); Changed(nameof(CanCopySelectedUrl)); Changed(nameof(CanOpenUpdates));
             _ready.TrySetResult(true);
             if (_enableTray && !_closing) CreateTray();
         }
@@ -494,6 +497,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         try { if (Clipboard.ContainsText()) { UrlInput.Text = Clipboard.GetText(); await AddUrlsAsync(UrlInput.Text); UrlInput.Clear(); } }
         catch (Exception error) { CurrentStatus = "Не удалось прочитать буфер: " + error.Message; }
     }
+
+    private void OnCopySelectedUrl(object sender, RoutedEventArgs e)
+    {
+        if (!CanReceiveInput || SelectedItem is not { } item) return;
+        try
+        {
+            Clipboard.SetText(item.Url);
+            CurrentStatus = "Ссылка скопирована.";
+        }
+        catch (ExternalException)
+        {
+            CurrentStatus = "Буфер обмена занят. Попробуйте скопировать ссылку ещё раз.";
+        }
+    }
+
     private async void OnUrlKeyDown(object sender, KeyEventArgs e) { if (e.Key == Key.Enter) { e.Handled = true; await AddUrlsAsync(UrlInput.Text); UrlInput.Clear(); } }
     private async void OnStart(object sender, RoutedEventArgs e) => await StartAsync();
     private void OnPause(object sender, RoutedEventArgs e) => Pause();
@@ -521,7 +539,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (RecoveryItem?.Checkpoint?.LastSuccessfulPageUrl is not { } url) return;
         try { Clipboard.SetText(url.AbsoluteUri); }
-        catch (System.Runtime.InteropServices.ExternalException)
+        catch (ExternalException)
         { RecoveryError.Text = "Буфер обмена занят. Выделите адрес и нажмите Ctrl+C."; }
     }
 
@@ -736,7 +754,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (_closing) return;
         _closing = true;
         Changed(nameof(CanStart));
-        Changed(nameof(CanEditSettings)); Changed(nameof(CanReceiveInput)); Changed(nameof(CanOpenUpdates));
+        Changed(nameof(CanEditSettings)); Changed(nameof(CanReceiveInput)); Changed(nameof(CanCopySelectedUrl)); Changed(nameof(CanOpenUpdates));
         _saveTimer.Stop();
         _previewStop?.Cancel();
         var updateWindow = CurrentUpdateWindow;
@@ -761,7 +779,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             PendingAppUpdate = null;
             _closing = false;
             IsUpdating = false;
-            Changed(nameof(CanStart)); Changed(nameof(CanEditSettings)); Changed(nameof(CanReceiveInput)); Changed(nameof(CanOpenUpdates));
+            Changed(nameof(CanStart)); Changed(nameof(CanEditSettings)); Changed(nameof(CanReceiveInput)); Changed(nameof(CanCopySelectedUrl)); Changed(nameof(CanOpenUpdates));
             CurrentStatus = "Перезапуск отменён: " + error.Message;
             Log(CurrentStatus);
             return;

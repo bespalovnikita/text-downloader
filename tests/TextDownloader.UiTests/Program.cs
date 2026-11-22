@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Xml.Linq;
 using TextDownloader;
 using TextDownloader.Core;
@@ -46,6 +47,8 @@ internal static class Program
         var window = new MainWindow(profile, () => new FakeSource(network), enableTray: false);
         window.Show();
         await window.Ready.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert(!((Button)window.FindName("CopyQueueUrlButton")).IsEnabled &&
+            !((Button)window.FindName("CopyDownloadUrlButton")).IsEnabled, "Copy URL was enabled without a selection");
         window.OutputDirectory = Path.Combine(Root, "books");
         var delayInput = (TextBox)window.FindName("PageDelayInput");
         delayInput.SetCurrentValue(TextBox.TextProperty, "0,09");
@@ -96,6 +99,7 @@ internal static class Program
         await window.ActiveSession.WaitAsync(TimeSpan.FromSeconds(10));
         Assert(window.Items[1].Status == QueueStatus.Failed, "Age confirmation silently accepted");
         Assert(window.History.Count == 1, "Failed gate entered history");
+        VerifyCopyUrls(window);
         ((CheckBox)window.FindName("AdultCheck")).IsChecked = true;
         Click(window, "RetryButton");
         Assert(!window.IsBusy && window.Items[1].Status == QueueStatus.Queued, "Retry automatically started");
@@ -150,6 +154,28 @@ internal static class Program
         Assert(!corrupt.CanStart, "Corrupt state allowed download/start");
         await CloseAsync(corrupt);
         Assert(await File.ReadAllTextAsync(badFile) == damaged, "Corrupt profile overwritten");
+    }
+
+    private static void VerifyCopyUrls(MainWindow window)
+    {
+        var previousClipboard = Clipboard.GetDataObject();
+        try
+        {
+            var queue = (ListBox)window.FindName("QueueList");
+            queue.SetCurrentValue(Selector.SelectedItemProperty, window.Items[0]);
+            Click(window, "CopyQueueUrlButton");
+            Assert(Clipboard.GetText() == window.Items[0].Url, "Queue copy did not copy the selected completed item's URL");
+
+            var downloads = (DataGrid)window.FindName("DownloadsGrid");
+            downloads.SetCurrentValue(Selector.SelectedItemProperty, window.Items[1]);
+            Click(window, "CopyDownloadUrlButton");
+            Assert(Clipboard.GetText() == window.Items[1].Url, "Downloads copy did not copy the selected failed item's URL");
+        }
+        finally
+        {
+            if (previousClipboard is null) Clipboard.Clear();
+            else Clipboard.SetDataObject(previousClipboard, true);
+        }
     }
 
     private static async Task ManualRecoveryAsync()
