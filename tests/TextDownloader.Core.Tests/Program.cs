@@ -36,6 +36,7 @@ internal static class Program
             ("Missing, skipped, duplicated and inconsistent pages fail", IncompleteStories),
             ("Cancellation and corrupt cache cannot produce false success", CancellationAndCache),
             ("Resuming reuses exactly the validated prefix after a page failure", ResumeAfterPageFailure),
+            ("A corrected URL retries the pending page without changing the story", ManualPageRecovery),
             ("Preview does not download the entire story", Preview),
             ("Bestweapon URL scope and current-post-only preview", BestweaponTests.PreviewAsync),
             ("Bestweapon orders all preceding chapters and excludes future parts", BestweaponTests.OrderedSeriesAsync),
@@ -513,6 +514,31 @@ internal static class Program
             .DownloadAsync(Source, false, false, null, CancellationToken.None);
         Sequence(Enumerable.Range(21, total - 20).Select(PageUrl), resumed.Calls);
         Sequence(Enumerable.Range(1, total).Select(number => $"Страница {number}."), book.Paragraphs);
+    }
+
+    private static async Task ManualPageRecovery()
+    {
+        using var folder = new TemporaryDirectory();
+        Uri pending = PageUrl(2);
+        Uri replacement = new(pending.AbsoluteUri.Replace("/2/drama/", "/5/i/"));
+        using var source = new FakeSource(new()
+        {
+            [Source] = ChainPage("Начало. ", pending, pending, 2),
+            [replacement] = ChainPage("Конец.", null, replacement, 2),
+        });
+        var downloader = new StoryDownloader(source, folder.Path);
+        DownloadCheckpoint? checkpoint = null;
+        await ThrowsAsync<IOException>(() => downloader.DownloadAsync(Source, false, false,
+            new InlineProgress(progress => checkpoint = progress.Checkpoint ?? checkpoint), CancellationToken.None));
+        Equal(new DownloadCheckpoint(Source, Source, pending), checkpoint);
+        Throws<ArgumentException>(() => StoryDownloader.ValidateReplacementPage(pending, PageUrl(3)));
+        Throws<SefanStoryScopeMismatchException>(() => StoryDownloader.ValidateReplacementPage(pending,
+            new Uri(replacement.AbsoluteUri.Replace("test-story", "unrelated"))));
+        source.Calls.Clear();
+        var book = await downloader.DownloadAsync(Source, false, false, null, CancellationToken.None,
+            new DownloadRecovery(checkpoint, StoryDownloader.ValidateReplacementPage(pending, replacement)));
+        Sequence(new[] { replacement }, source.Calls);
+        Sequence(new[] { "Начало. Конец." }, book.Paragraphs);
     }
 
     private static async Task Preview()

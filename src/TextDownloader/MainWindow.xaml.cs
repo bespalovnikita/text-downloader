@@ -60,9 +60,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         set
         {
             if (!Set(ref _selectedItem, value)) return;
+            RefreshPageRecovery();
             if (_initialized && !IsUpdating) _previewTask = PreviewSelectedAsync(value);
         }
     }
+    private QueueItem? _recoveryItem;
+    public QueueItem? RecoveryItem
+    {
+        get => _recoveryItem;
+        private set
+        {
+            if (!Set(ref _recoveryItem, value)) return;
+            RecoveryPageInput.Text = value?.Checkpoint?.PendingPageUrl?.AbsoluteUri ?? "";
+            RecoveryError.Text = "";
+        }
+    }
+
     private QueueItem? _activeItem;
     public QueueItem? ActiveItem { get => _activeItem; private set => Set(ref _activeItem, value); }
     private bool _isBusy;
@@ -138,7 +151,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _updateTargetDirectory = Path.GetFullPath(updateTargetDirectory ?? AppContext.BaseDirectory);
         InitializeComponent();
         DataContext = this;
-        Items.CollectionChanged += (_, _) => { Changed(nameof(QueueCountText)); Changed(nameof(StartLabel)); ScheduleSave(); };
+        Items.CollectionChanged += (_, _) => { Changed(nameof(QueueCountText)); Changed(nameof(StartLabel)); RefreshPageRecovery(); ScheduleSave(); };
         _saveTimer.Tick += async (_, _) => { _saveTimer.Stop(); await SaveSafelyAsync(); };
         Loaded += OnLoaded;
     }
@@ -222,11 +235,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void Attach(QueueItem item)
     {
-        item.PropertyChanged += (_, _) => { Changed(nameof(QueueCountText)); Changed(nameof(StartLabel)); ScheduleSave(); };
+        item.PropertyChanged += (_, change) =>
+        {
+            Changed(nameof(QueueCountText));
+            Changed(nameof(StartLabel));
+            if (change.PropertyName == nameof(QueueItem.Status)) RefreshPageRecovery();
+            ScheduleSave();
+        };
         Items.Add(item);
     }
 
-    private async Task PreviewSelectedAsync(QueueItem? item)
+    private async Task PreviewSelectedAsync(QueueItem? item, bool force = false)
     {
         if (IsUpdating || _closing) return;
         _previewStop?.Cancel();
@@ -238,6 +257,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         PreviewText = "";
         PreviewStatus = item is null ? "" : "Получаем сведения…";
         if (item is null) return;
+        if (!force && item.Status == QueueStatus.Failed && item.Checkpoint?.PendingPageUrl is not null)
+        {
+            PreviewStatus = item.Message;
+            return;
+        }
         bool confirmAdult = ConfirmAdult;
         TimeSpan pageDelay = _settings.GetPageDelay();
         try
@@ -300,7 +324,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 if (!Items.Contains(item)) continue;
                 ActiveItem = item;
                 if (refresh && !item.ResumeDownload && item.Status != QueueStatus.Paused)
+                {
                     item.CacheRunId = Guid.NewGuid();
+                    item.Checkpoint = null;
+                    item.ReplacementPageUrl = null;
+                }
+                var recovery = new DownloadRecovery(item.Checkpoint, item.ReplacementPageUrl);
                 item.ResumeDownload = true;
                 string cache = item.CacheRunId is { } runId
                     ? Path.Combine(_store.CacheDirectory, "refresh", runId.ToString("N"))
@@ -314,6 +343,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     item.CompletedPages = p.CompletedPages;
                     item.TotalPages = p.TotalPages;
                     item.Message = p.Message;
+                    if (p.Checkpoint is not null) item.Checkpoint = p.Checkpoint;
                     CurrentStatus = $"{item.DisplayTitle}: {CountLabel(item.Url)}: {p.CompletedPages}/{p.TotalPages?.ToString() ?? "?"} · {p.Message}";
                     UpdateTray();
                 });
@@ -324,7 +354,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     {
                         using IStorySource source = _sourceFactory(pageDelay);
                         var downloader = new StoryDownloader(source, cache);
-                        BookDocument book = await downloader.DownloadAsync(new Uri(item.Url), confirmAdult, false, progress, token);
+                        BookDocument book = await downloader.DownloadAsync(new Uri(item.Url), confirmAdult, false, progress, token, recovery);
                         token.ThrowIfCancellationRequested();
                         IReadOnlyList<string> files = await BookExporter.ExportAsync(book, directory, format, token);
                         return (Book: book, Files: files);
@@ -339,6 +369,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     var entry = new HistoryEntry { Title = result.Book.Title, Url = item.Url, CompletedAt = DateTimeOffset.UtcNow, Pages = result.Book.PageCount, Files = result.Files.ToList() };
                     History.Insert(0, entry);
                     item.ResumeDownload = false;
+                    item.Checkpoint = null;
+                    item.ReplacementPageUrl = null;
                     item.Status = QueueStatus.Completed;
                     try { await SaveOrThrowAsync(); }
                     catch
@@ -370,8 +402,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 }
                 catch (Exception error)
                 {
-                    item.Status = QueueStatus.Failed;
                     if (!item.Message.StartsWith("Книга сохранена", StringComparison.Ordinal)) item.Message = error.Message;
+                    item.Status = QueueStatus.Failed;
                     CurrentStatus = item.DisplayTitle + ": " + item.Message;
                     Log("Ошибка: " + item.DisplayTitle + ": " + error.Message);
                     if (_saveFailed) break;
@@ -476,6 +508,42 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         CurrentStatus = "Нажмите «Скачать очередь», чтобы повторить задания.";
         ScheduleSave();
     }
+    private void RefreshPageRecovery()
+    {
+        static bool CanRecover(QueueItem? item) =>
+            item?.Status == QueueStatus.Failed && item.Checkpoint?.PendingPageUrl is not null;
+        RecoveryItem = CanRecover(SelectedItem) ? SelectedItem : Items.LastOrDefault(CanRecover);
+    }
+
+    private void OnCopyLastPage(object sender, RoutedEventArgs e)
+    {
+        if (RecoveryItem?.Checkpoint?.LastSuccessfulPageUrl is not { } url) return;
+        try { Clipboard.SetText(url.AbsoluteUri); }
+        catch (System.Runtime.InteropServices.ExternalException)
+        { RecoveryError.Text = "Буфер обмена занят. Выделите адрес и нажмите Ctrl+C."; }
+    }
+
+    private async void OnUseRecoveryPage(object sender, RoutedEventArgs e)
+    {
+        if (!CanEditSettings || RecoveryItem is not { Checkpoint.PendingPageUrl: { } expected } item) return;
+        try
+        {
+            if (!Uri.TryCreate(RecoveryPageInput.Text.Trim(), UriKind.Absolute, out var uri))
+                throw new ArgumentException("Введите полный адрес страницы.");
+            item.ReplacementPageUrl = StoryDownloader.ValidateReplacementPage(expected, uri);
+        }
+        catch (Exception error) when (error is ArgumentException or SefanStoryScopeMismatchException)
+        {
+            RecoveryError.Text = error.Message;
+            return;
+        }
+        item.ResumeDownload = true;
+        item.Status = QueueStatus.Queued;
+        item.Message = "Адрес принят. Задание готово к продолжению.";
+        CurrentStatus = "Нажмите «Скачать очередь», чтобы продолжить.";
+        await SaveSafelyAsync();
+    }
+
     private void OnRepeatSelected(object sender, RoutedEventArgs e)
     {
         if (IsBusy || IsUpdating || _closing) return;
@@ -484,6 +552,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         foreach (QueueItem item in selected)
         {
             item.ResumeDownload = false;
+            item.Checkpoint = null;
+            item.ReplacementPageUrl = null;
             item.Status = QueueStatus.Queued;
             item.Message = "Повторная загрузка готова к запуску. Прежние книги сохранены.";
         }
@@ -540,7 +610,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         else if (e.Data.GetDataPresent(DataFormats.Text)) await AddUrlsAsync((string)e.Data.GetData(DataFormats.Text));
     }
-    private void OnPreview(object sender, RoutedEventArgs e) { if (!IsUpdating && !_closing) _previewTask = PreviewSelectedAsync(SelectedItem); }
+    private void OnPreview(object sender, RoutedEventArgs e) { if (!IsUpdating && !_closing) _previewTask = PreviewSelectedAsync(SelectedItem, force: true); }
     private void OnOpenBook(object sender, RoutedEventArgs e) { if (SelectedItem is not null) OpenBook(SelectedItem.Files.FirstOrDefault()); }
     private void OnQueueDoubleClick(object sender, MouseButtonEventArgs e) { if (SelectedItem?.Status == QueueStatus.Completed) OpenBook(SelectedItem.Files.FirstOrDefault()); }
     private void OnShowBook(object sender, RoutedEventArgs e) { if (SelectedItem is not null) OpenBookFolder(SelectedItem.Files.FirstOrDefault()); }

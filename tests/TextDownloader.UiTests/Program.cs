@@ -20,6 +20,7 @@ internal static class Program
             {
                 Directory.CreateDirectory(Root);
                 await RunScenariosAsync();
+                await ManualRecoveryAsync();
                 await UpdateUiTests.RunAsync(Path.Combine(Root, "updates"));
                 await BestweaponUiTests.RunAsync(Path.Combine(Root, "bestweapon"));
                 Console.WriteLine("PASS: real WPF add/preview/pause/resume/cancel/retry/export/history/restore/corrupt-profile scenarios");
@@ -151,6 +152,43 @@ internal static class Program
         Assert(await File.ReadAllTextAsync(badFile) == damaged, "Corrupt profile overwritten");
     }
 
+    private static async Task ManualRecoveryAsync()
+    {
+        const string first = "https://sefan.ru/stories/ru/2/drama/recovery_1.html";
+        const string second = "https://sefan.ru/stories/ru/2/drama/recovery_1-2.html";
+        const string replacement = "https://sefan.ru/stories/ru/2/i/recovery_1-2.html";
+        string profile = Path.Combine(Root, "recovery-profile");
+        var network = new FakeNetwork { FailedPage = second };
+        var window = new MainWindow(profile, () => new FakeSource(network), enableTray: false);
+        window.Show();
+        await window.Ready.WaitAsync(TimeSpan.FromSeconds(10));
+        window.OutputDirectory = Path.Combine(Root, "recovery-books");
+        await window.AddUrlsAsync(first);
+        await window.ActivePreview.WaitAsync(TimeSpan.FromSeconds(10));
+        await window.StartAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        Assert(window.Items[0].Status == QueueStatus.Failed && window.History.Count == 0, "Download error was lost");
+        int firstPageCalls = network.PageOneCalls;
+        await CloseAsync(window);
+
+        var restored = new MainWindow(profile, () => new FakeSource(network), enableTray: false);
+        restored.Show();
+        await restored.Ready.WaitAsync(TimeSpan.FromSeconds(10));
+        var lastPage = (TextBox)restored.FindName("LastSuccessfulPageInput");
+        var recoveryInput = (TextBox)restored.FindName("RecoveryPageInput");
+        Assert(lastPage.IsVisible && lastPage.IsReadOnly && lastPage.Text == first, "Last successful page was unavailable for copying");
+        Assert(recoveryInput.Text == second, "The failed page was not offered for replacement");
+        recoveryInput.Text = first;
+        Click(restored, "UseRecoveryPageButton");
+        Assert(restored.Items[0].Status == QueueStatus.Failed, "Replacing the pending page with an earlier page was allowed");
+        recoveryInput.Text = replacement;
+        Click(restored, "UseRecoveryPageButton");
+        Assert(restored.Items[0].Status == QueueStatus.Queued, "Replacement did not queue a retry");
+        await restored.StartAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        Assert(restored.Items[0].Status == QueueStatus.Completed && restored.History.Count == 1, "Replacement did not complete the download");
+        Assert(network.PageOneCalls == firstPageCalls, "Recovery re-downloaded the saved page");
+        await CloseAsync(restored);
+    }
+
     private static void Click(MainWindow window, string name)
     {
         var button = (Button)window.FindName(name);
@@ -193,6 +231,7 @@ internal static class Program
     {
         public bool HoldSecondPage, RequireAdult, HoldNextFirstPage;
         public int PageOneCalls;
+        public string? FailedPage;
         public TaskCompletionSource<bool> SecondPageStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource<bool> SlowPreviewStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
@@ -203,6 +242,7 @@ internal static class Program
         public Uri NormalizeToFirstPage(Uri uri) => _urls.NormalizeToFirstPage(uri);
         public async Task<StoryPage> GetPageAsync(Uri uri, bool confirmAdult, CancellationToken cancellationToken)
         {
+            if (uri.AbsoluteUri == network.FailedPage) throw new IOException("Synthetic connection failure");
             if (network.RequireAdult && !confirmAdult) throw new AgeConfirmationRequiredException();
             bool second = uri.AbsolutePath.EndsWith("_1-2.html");
             if (!second && network.HoldNextFirstPage)

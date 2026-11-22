@@ -119,7 +119,7 @@ internal static class BestweaponUiTests
             return new StoryPage(uri, 1, "Синтетический цикл — часть 3", "Синтетический автор", "Предпросмотр одной выбранной публикации.", null, null);
         }
         public async Task<BookDocument> DownloadBookAsync(Uri uri, bool confirmAdult, bool refresh, string cacheDirectory,
-            IProgress<DownloadProgress>? progress, CancellationToken token)
+            IProgress<DownloadProgress>? progress, CancellationToken token, DownloadRecovery? recovery = null)
         {
             calls.Books++;
             calls.BookUrl = uri;

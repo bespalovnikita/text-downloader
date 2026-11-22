@@ -14,7 +14,14 @@ public sealed record BookDocument(string Title, string? Author, Uri SourceUrl,
     public IReadOnlyList<BookChapter>? Chapters { get; init; }
 }
 
-public sealed record DownloadProgress(int CompletedPages, int? TotalPages, string Message);
+public sealed record DownloadProgress(int CompletedPages, int? TotalPages, string Message)
+{
+    public DownloadCheckpoint? Checkpoint { get; init; }
+}
+
+public sealed record DownloadCheckpoint(Uri AttemptStartUrl, Uri? LastSuccessfulPageUrl, Uri? PendingPageUrl);
+
+public sealed record DownloadRecovery(DownloadCheckpoint? Checkpoint, Uri? ReplacementPageUrl);
 
 public interface IStorySource : IDisposable
 {

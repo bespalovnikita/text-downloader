@@ -20,6 +20,18 @@ public sealed class QueueItem : INotifyPropertyChanged
     public string Url { get; set; } = "";
     public Guid? CacheRunId { get; set; }
     public bool ResumeDownload { get; set; }
+    public Uri? ReplacementPageUrl { get; set; }
+    private DownloadCheckpoint? _checkpoint;
+    public DownloadCheckpoint? Checkpoint
+    {
+        get => _checkpoint;
+        set
+        {
+            if (_checkpoint == value) return;
+            _checkpoint = value;
+            Changed();
+        }
+    }
     private string _title = "";
     public string Title { get => _title; set { _title = value; Changed(); Changed(nameof(DisplayTitle)); } }
     [JsonIgnore] public string DisplayTitle => string.IsNullOrWhiteSpace(Title) ? Url : Title;

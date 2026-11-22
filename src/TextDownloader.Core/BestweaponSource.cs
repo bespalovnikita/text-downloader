@@ -71,25 +71,38 @@ public sealed class BestweaponSource : IBookStorySource
     }
 
     public async Task<BookDocument> DownloadBookAsync(Uri url, bool confirmAdult, bool refresh, string cacheDirectory,
-        IProgress<DownloadProgress>? progress, CancellationToken cancellationToken)
+        IProgress<DownloadProgress>? progress, CancellationToken cancellationToken, DownloadRecovery? recovery = null)
     {
         var requested = Normalize(url);
         var cache = Path.Combine(Path.GetFullPath(cacheDirectory), "bestweapon", Hash(Encoding.UTF8.GetBytes(requested.AbsoluteUri)).ToLowerInvariant());
-        progress?.Report(new DownloadProgress(0, null, "Читаем оглавление выбранной части Bestweapon…"));
+        progress?.Report(new DownloadProgress(0, null, "Читаем оглавление выбранной части Bestweapon…")
+        {
+            Checkpoint = new DownloadCheckpoint(requested, null, requested)
+        });
         var selected = await GetPostAsync(requested, cache, refresh, ValidateSelected, cancellationToken).ConfigureAwait(false);
         var plan = selected.Parts.Take(selected.PartNumber).ToArray();
         progress?.Report(new DownloadProgress(0, plan.Length, $"Найдено частей до выбранной включительно: {plan.Length}."));
         var chapters = new List<BookChapter>(plan.Length);
         long characters = 0;
+        Uri lastSuccessfulUrl = selected.Url;
         foreach (var part in plan)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            progress?.Report(new DownloadProgress(chapters.Count, plan.Length, $"Проверяем часть {part.Number} из {plan.Length}…")
+            {
+                Checkpoint = new DownloadCheckpoint(requested, lastSuccessfulUrl, part.Url)
+            });
             var post = part.Url == selected.Url ? selected : await GetPostAsync(part.Url, cache, refresh,
                 candidate => ValidateAgainstPlan(candidate, selected, part, plan), cancellationToken).ConfigureAwait(false);
             characters += post.Paragraphs.Sum(p => (long)p.Length);
             if (characters > MaxStoryCharacters) throw new InvalidDataException("Текст превышает допустимый объём одной книги.");
             chapters.Add(new BookChapter(part.Title, post.Url, post.Paragraphs.ToArray()));
-            progress?.Report(new DownloadProgress(chapters.Count, plan.Length, $"Часть {part.Number} из {plan.Length} проверена: {part.Title}"));
+            if (part.Url != selected.Url) lastSuccessfulUrl = post.Url;
+            Uri? next = chapters.Count < plan.Length ? plan[chapters.Count].Url : null;
+            progress?.Report(new DownloadProgress(chapters.Count, plan.Length, $"Часть {part.Number} из {plan.Length} проверена: {part.Title}")
+            {
+                Checkpoint = new DownloadCheckpoint(requested, lastSuccessfulUrl, next)
+            });
         }
         cancellationToken.ThrowIfCancellationRequested();
         var paragraphs = chapters.SelectMany(chapter => chapter.Paragraphs).ToArray();
@@ -186,7 +199,7 @@ public sealed class BestweaponSource : IBookStorySource
         return post;
     }
 
-    private static Uri Normalize(Uri uri)
+    internal static Uri Normalize(Uri uri)
     {
         if (uri is null || !uri.IsAbsoluteUri || uri.Scheme is not ("http" or "https") ||
             uri.Host is not ("bestweapon.cc" or "www.bestweapon.cc") || !string.IsNullOrEmpty(uri.UserInfo) || uri.Port is not (80 or 443))

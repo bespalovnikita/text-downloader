@@ -27,12 +27,12 @@ public sealed class SupportedStorySource : IBookStorySource
         SourceFor(uri).GetPageAsync(uri, confirmAdult, cancellationToken);
 
     public Task<BookDocument> DownloadBookAsync(Uri url, bool confirmAdult, bool refresh, string cacheDirectory,
-        IProgress<DownloadProgress>? progress, CancellationToken cancellationToken)
+        IProgress<DownloadProgress>? progress, CancellationToken cancellationToken, DownloadRecovery? recovery = null)
     {
         IStorySource source = SourceFor(url);
         return source is IBookStorySource bookSource
-            ? bookSource.DownloadBookAsync(url, confirmAdult, refresh, cacheDirectory, progress, cancellationToken)
-            : new StoryDownloader(source, cacheDirectory).DownloadAsync(url, confirmAdult, refresh, progress, cancellationToken);
+            ? bookSource.DownloadBookAsync(url, confirmAdult, refresh, cacheDirectory, progress, cancellationToken, recovery)
+            : new StoryDownloader(source, cacheDirectory).DownloadAsync(url, confirmAdult, refresh, progress, cancellationToken, recovery);
     }
 
     private IStorySource SourceFor(Uri uri)

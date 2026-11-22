@@ -4,5 +4,5 @@ namespace TextDownloader.Core;
 public interface IBookStorySource : IStorySource
 {
     Task<BookDocument> DownloadBookAsync(Uri url, bool confirmAdult, bool refresh, string cacheDirectory,
-        IProgress<DownloadProgress>? progress, CancellationToken cancellationToken);
+        IProgress<DownloadProgress>? progress, CancellationToken cancellationToken, DownloadRecovery? recovery = null);
 }
