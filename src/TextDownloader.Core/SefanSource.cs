@@ -7,7 +7,7 @@ using HtmlAgilityPack;
 namespace TextDownloader.Core;
 
 /// <summary>Reader for numbered pages of one story in Sefan's stories section.</summary>
-public sealed class SefanSource : IStorySource
+public sealed partial class SefanSource : IStorySource
 {
     private const int MaxResponseBytes = 4 * 1024 * 1024;
     private readonly HttpClient _client;
@@ -60,48 +60,68 @@ public sealed class SefanSource : IStorySource
     public async Task<StoryPage> GetPageAsync(Uri uri, bool confirmAdult, CancellationToken cancellationToken)
     {
         var original = Normalize(uri);
-        var (html, actual) = await RequestAsync(original, original, null, cancellationToken).ConfigureAwait(false);
-        try { return Parse(html, actual); }
-        catch (AgeConfirmationRequiredException) when (confirmAdult)
+        var (document, actual) = await GetDocumentAsync(original, confirmAdult, cancellationToken, candidate =>
         {
-            var document = LoadDocument(html);
-            var gate = FindAgeGate(document) ?? throw new InvalidDataException("Не найдена форма подтверждения возраста.");
-            var action = SameStory(new Uri(actual, Attribute(gate, "action", actual.AbsoluteUri)), original);
-            if (PageNumber(action) != PageNumber(original))
-                throw new InvalidDataException("Форма подтверждения ведёт на другую страницу рассказа.");
-            var fields = gate.Descendants("input")
-                .Where(n => Attribute(n, "type").Equals("hidden", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(Attribute(n, "name")))
-                .GroupBy(n => Attribute(n, "name"), StringComparer.Ordinal)
-                .ToDictionary(g => g.Key, g => Attribute(g.First(), "value"), StringComparer.Ordinal);
-            fields["freed"] = "1";
-            fields["fkay"] = gate.Descendants("input").FirstOrDefault(n => Attribute(n, "name") == "fkay") is { } submit
-                ? Attribute(submit, "value", "Мне исполнилось 18 лет") : "Мне исполнилось 18 лет";
-            (html, actual) = await RequestAsync(action, original, fields, cancellationToken).ConfigureAwait(false);
-            return Parse(html, actual);
-        }
+            var normalized = SameStory(candidate, original);
+            if (PageNumber(normalized) != PageNumber(original))
+                throw new InvalidDataException("Сайт перенаправил на другую страницу рассказа.");
+            return normalized;
+        }).ConfigureAwait(false);
+        return Parse(document, actual);
+    }
+
+    private async Task<(HtmlDocument Document, Uri Actual)> GetDocumentAsync(Uri original, bool confirmAdult,
+        CancellationToken cancellationToken, Func<Uri, Uri> validate)
+    {
+        var (html, actual) = await RequestAsync(original, original, null, cancellationToken, validate).ConfigureAwait(false);
+        var document = LoadDocument(html);
+        if (FindAgeGate(document) is not { } gate) return (document, actual);
+        if (!confirmAdult) throw new AgeConfirmationRequiredException();
+
+        var action = validate(new Uri(actual, Attribute(gate, "action", actual.AbsoluteUri)));
+        var fields = gate.Descendants("input")
+            .Where(n => Attribute(n, "type").Equals("hidden", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(Attribute(n, "name")))
+            .GroupBy(n => Attribute(n, "name"), StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => Attribute(g.First(), "value"), StringComparer.Ordinal);
+        fields["freed"] = "1";
+        fields["fkay"] = gate.Descendants("input").FirstOrDefault(n => Attribute(n, "name") == "fkay") is { } submit
+            ? Attribute(submit, "value", "Мне исполнилось 18 лет") : "Мне исполнилось 18 лет";
+        (html, actual) = await RequestAsync(action, original, fields, cancellationToken, validate).ConfigureAwait(false);
+        document = LoadDocument(html);
+        if (FindAgeGate(document) is not null) throw new AgeConfirmationRequiredException();
+        return (document, actual);
     }
 
     /// <summary>Parse a numbered page without performing any network operation.</summary>
     public static StoryPage Parse(string html, Uri url)
     {
-        url = Normalize(url);
-        var doc = LoadDocument(html);
-        if (FindAgeGate(doc) is not null) throw new AgeConfirmationRequiredException();
+        var document = LoadDocument(html);
+        if (FindAgeGate(document) is not null) throw new AgeConfirmationRequiredException();
+        return Parse(document, Normalize(url));
+    }
+
+    private static StoryPage Parse(HtmlDocument doc, Uri url)
+    {
         var nodes = doc.DocumentNode.Descendants().ToArray();
         var content = doc.GetElementbyId("rsz") ?? throw new InvalidDataException(
             "Не найден блок текста #rsz. Возможно, сайт изменился или вернул служебную страницу.");
-        var fragment = string.Concat(content.ChildNodes.Select(n => Render(n, true)));
-        if (string.IsNullOrWhiteSpace(CleanText(fragment))) throw new InvalidDataException("Страница содержит пустой текст.");
         var heading = nodes.FirstOrDefault(n => n.Name == "h1");
         var title = heading is null ? "" : CleanText(Render(heading, false));
         if (string.IsNullOrWhiteSpace(title)) throw new InvalidDataException("Не найдено название рассказа.");
         var authorNode = nodes.FirstOrDefault(n => n.Name == "meta" && Attribute(n, "name").Equals("author", StringComparison.OrdinalIgnoreCase));
         var author = authorNode is null ? null : CleanText(Attribute(authorNode, "content"));
 
-        var candidates = nodes.Where(n => (n.Name is "a" or "link") && Tokens(n, "rel").Contains("next") && !string.IsNullOrWhiteSpace(Attribute(n, "href")))
+        var excluded = new HashSet<HtmlNode>();
+        var pageContents = ReadPageContents(doc, url, excluded);
+        var contents = PageNumber(url) == 1 ? pageContents : null;
+        var fragment = string.Concat(content.ChildNodes.Select(n => Render(n, true, excluded)));
+        if (string.IsNullOrWhiteSpace(CleanText(fragment))) throw new InvalidDataException("Страница содержит пустой текст.");
+
+        var navigation = nodes.Where(node => !excluded.Contains(node) && !node.Ancestors().Any(excluded.Contains)).ToArray();
+        var candidates = navigation.Where(n => (n.Name is "a" or "link") && Tokens(n, "rel").Contains("next") && !string.IsNullOrWhiteSpace(Attribute(n, "href")))
             .Select(n => Attribute(n, "href")).ToArray();
         if (candidates.Length == 0)
-            candidates = nodes.Where(n => n.Name == "a" && Attribute(n, "title").Equals("Следующая страница", StringComparison.OrdinalIgnoreCase)
+            candidates = navigation.Where(n => n.Name == "a" && Attribute(n, "title").Equals("Следующая страница", StringComparison.OrdinalIgnoreCase)
                 && !string.IsNullOrWhiteSpace(Attribute(n, "href"))).Select(n => Attribute(n, "href")).ToArray();
         // Sefan can emit different display styles or an admitted neutral-route
         // alias in its head/body links for the same ordered story page.
@@ -113,7 +133,7 @@ public sealed class SefanSource : IStorySource
             throw new InvalidDataException("Нарушена последовательность страниц рассказа.");
 
         var totals = new HashSet<int>();
-        foreach (var node in nodes.Where(n => n.Name is "a" or "link"))
+        foreach (var node in navigation.Where(n => n.Name is "a" or "link"))
         {
             var match = Regex.Match(Attribute(node, "title"), @"Страница\s+\d+\s+из\s+(\d+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
             if (match.Success && int.TryParse(match.Groups[1].Value, out var count)) totals.Add(count);
@@ -122,11 +142,11 @@ public sealed class SefanSource : IStorySource
         }
         if (totals.Count > 1) throw new InvalidDataException("Сайт сообщил разное общее количество страниц.");
         int? total = totals.Count == 0 ? null : totals.Single();
-        if (total is null && next is null && nodes.Any(n => (n.Name is "span" or "b") && Tokens(n, "class").Contains("but") &&
+        if (total is null && next is null && navigation.Any(n => (n.Name is "span" or "b") && Tokens(n, "class").Contains("but") &&
             Regex.IsMatch(Render(n, false), @"\bДалее\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))) total = current;
         if (total is not null && (total < current || (next is null && total > current) || (next is not null && current >= total)))
             throw new InvalidDataException("Не удалось подтвердить полноту: число страниц не соответствует навигации.");
-        return new StoryPage(url, current, title, string.IsNullOrWhiteSpace(author) ? null : author, fragment, next, total);
+        return new StoryPage(url, current, title, string.IsNullOrWhiteSpace(author) ? null : author, fragment, next, total) { Contents = contents };
     }
 
     internal static Uri Normalize(Uri uri)
@@ -191,8 +211,9 @@ public sealed class SefanSource : IStorySource
     private static HashSet<string> Tokens(HtmlNode node, string name) => Attribute(node, name).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
         .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-    private static string Render(HtmlNode node, bool story)
+    private static string Render(HtmlNode node, bool story, HashSet<HtmlNode>? excluded = null)
     {
+        if (excluded?.Contains(node) == true) return "";
         if (node.NodeType == HtmlNodeType.Text)
             return Regex.Replace(HtmlEntity.DeEntitize(((HtmlTextNode)node).Text), @"[\t\r\n\f]+", " ");
         if (node.NodeType is HtmlNodeType.Comment || SkippedTags.Contains(node.Name) ||
@@ -201,18 +222,18 @@ public sealed class SefanSource : IStorySource
             Attribute(node, "title").Contains("следующая страница", StringComparison.OrdinalIgnoreCase) ||
             Attribute(node, "title").Contains("предыдущая страница", StringComparison.OrdinalIgnoreCase))) return "";
         if (story && node.Name is "br" or "hr") return "\n";
-        var inside = string.Concat(node.ChildNodes.Select(n => Render(n, story)));
+        var inside = string.Concat(node.ChildNodes.Select(n => Render(n, story, excluded)));
         return story && BlockTags.Contains(node.Name) ? "\n" + inside + "\n" : inside;
     }
 
     private async Task<(string Html, Uri Actual)> RequestAsync(Uri uri, Uri original,
-        IReadOnlyDictionary<string, string>? form, CancellationToken cancellationToken)
+        IReadOnlyDictionary<string, string>? form, CancellationToken cancellationToken, Func<Uri, Uri> validate)
     {
         for (var attempt = 0; attempt <= 2; attempt++)
         {
             try
             {
-                var current = SameStory(uri, original);
+                var current = validate(uri);
                 var usePost = form is not null;
                 for (var redirect = 0; redirect <= 5; redirect++)
                 {
@@ -227,13 +248,11 @@ public sealed class SefanSource : IStorySource
                         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                         timeout.CancelAfter(TimeSpan.FromSeconds(30));
                         using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
-                        var actual = SameStory(response.RequestMessage?.RequestUri ?? current, original);
-                        if (PageNumber(actual) != PageNumber(original)) throw new InvalidDataException("Сайт перенаправил на другую страницу рассказа.");
+                        var actual = validate(response.RequestMessage?.RequestUri ?? current);
                         if ((int)response.StatusCode is 301 or 302 or 303 or 307 or 308)
                         {
                             if (redirect == 5 || response.Headers.Location is null) throw new InvalidDataException("Слишком много перенаправлений сайта.");
-                            current = SameStory(new Uri(actual, response.Headers.Location), original);
-                            if (PageNumber(current) != PageNumber(original)) throw new InvalidDataException("Перенаправление ведёт на другую страницу.");
+                            current = validate(new Uri(actual, response.Headers.Location));
                             if ((int)response.StatusCode is 301 or 302 or 303) usePost = false;
                             continue;
                         }

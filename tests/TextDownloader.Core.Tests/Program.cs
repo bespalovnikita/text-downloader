@@ -38,6 +38,8 @@ internal static class Program
             ("Resuming reuses exactly the validated prefix after a page failure", ResumeAfterPageFailure),
             ("A corrected URL retries the pending page without changing the story", ManualPageRecovery),
             ("Preview does not download the entire story", Preview),
+            ("Sefan selector collects earlier and later chapters and resumes within a chapter", SefanSeriesTests.InlineContentsAndResumeAsync),
+            ("Sefan uses a separate contents page and rejects gaps", SefanSeriesTests.SeparateContentsAsync),
             ("Bestweapon URL scope and current-post-only preview", BestweaponTests.PreviewAsync),
             ("Bestweapon orders all preceding chapters and excludes future parts", BestweaponTests.OrderedSeriesAsync),
             ("Bestweapon rejects missing, ambiguous and unrelated series parts", BestweaponTests.RejectedChainsAsync),

@@ -284,7 +284,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (PreviewText.Length > 3000) PreviewText = PreviewText[..3000] + "…";
             PreviewStatus = IsBestweapon(item.Url)
                 ? "Выбранная публикация и предыдущие части цикла будут собраны в одну книгу."
-                : "Начало рассказа. Файлы появятся после завершения загрузки.";
+                : page.Contents is { IndexUrl: not null } or { Entries.Count: > 1 }
+                    ? "Связанные части из оглавления будут собраны в одну книгу."
+                    : "Начало рассказа. Файлы появятся после завершения загрузки.";
         }
         catch (OperationCanceledException) { }
         catch (Exception error)

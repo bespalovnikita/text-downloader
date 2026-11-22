@@ -1,16 +1,25 @@
+using System.Text.Json.Serialization;
+
 namespace TextDownloader.Core;
 
 public enum BookFormat { Epub, Fb2, Both }
 
 public sealed record StoryPage(Uri Url, int Number, string Title, string? Author,
-    string Fragment, Uri? NextUrl, int? TotalPages);
+    string Fragment, Uri? NextUrl, int? TotalPages)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public SefanContents? Contents { get; init; }
+}
+
+public sealed record SefanContentsEntry(string Label, Uri Url);
+public sealed record SefanContents(Uri? IndexUrl, IReadOnlyList<SefanContentsEntry> Entries);
 
 public sealed record BookChapter(string Title, Uri SourceUrl, IReadOnlyList<string> Paragraphs);
 
 public sealed record BookDocument(string Title, string? Author, Uri SourceUrl,
     IReadOnlyList<string> Paragraphs, int PageCount)
 {
-    /// <summary>Ordered logical chapters; null preserves the continuous Sefan text format.</summary>
+    /// <summary>Ordered logical chapters; null represents a story without separate chapters.</summary>
     public IReadOnlyList<BookChapter>? Chapters { get; init; }
 }
 
