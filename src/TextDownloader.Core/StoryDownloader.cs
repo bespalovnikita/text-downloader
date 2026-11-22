@@ -6,7 +6,7 @@ using System.Text.RegularExpressions;
 namespace TextDownloader.Core;
 
 /// <summary>Downloads and verifies all pages, retaining only replaceable text in its resume cache.</summary>
-public sealed class StoryDownloader
+public sealed partial class StoryDownloader
 {
     private const long MaxCacheBytes = 8 * 1024 * 1024;
     private const long MaxStoryCharacters = 50_000_000;
@@ -38,15 +38,9 @@ public sealed class StoryDownloader
         if (!expected.IsAbsoluteUri || !candidate.IsAbsoluteUri)
             throw new ArgumentException("Введите полный адрес страницы.");
         if (expected.Host is "sefan.ru" or "www.sefan.ru")
-        {
-            var replacement = SefanSource.SameStory(candidate, expected);
-            if (SefanSource.PageNumber(expected) == SefanSource.PageNumber(replacement)) return replacement;
-        }
-        else
-        {
-            var replacement = BestweaponSource.Normalize(candidate);
-            if (BestweaponSource.Normalize(expected) == replacement) return replacement;
-        }
+            return SefanSource.ValidateReplacementUrl(expected, candidate);
+        var replacement = BestweaponSource.Normalize(candidate);
+        if (BestweaponSource.Normalize(expected) == replacement) return replacement;
         throw new ArgumentException("Укажите адрес той же страницы, на которой остановилась загрузка.");
     }
 
@@ -58,9 +52,17 @@ public sealed class StoryDownloader
             return await bookSource.DownloadBookAsync(url, confirmAdult, refresh, _cacheDirectory,
                 progress, cancellationToken, recovery).ConfigureAwait(false);
         var first = _source.NormalizeToFirstPage(url);
-        if (!refresh && recovery?.Checkpoint?.AttemptStartUrl == SefanSource.WithNeutralGenre(first))
-            first = SefanSource.WithNeutralGenre(first);
-        try { return await DownloadAttemptAsync(first, confirmAdult, refresh, progress, cancellationToken, recovery).ConfigureAwait(false); }
+        return _source is SefanSource sefan
+            ? await DownloadSefanBookAsync(sefan, first, confirmAdult, refresh, progress, cancellationToken, recovery).ConfigureAwait(false)
+            : await DownloadPartAsync(first, confirmAdult, refresh, progress, cancellationToken, recovery).ConfigureAwait(false);
+    }
+
+    private async Task<BookDocument> DownloadPartAsync(Uri first, bool confirmAdult, bool refresh,
+        IProgress<DownloadProgress>? progress, CancellationToken cancellationToken, DownloadRecovery? recovery, StoryPage? firstPage = null,
+        Action<StoryPage>? validateStart = null)
+    {
+        first = GetAttemptStart(first, refresh, recovery);
+        try { return await DownloadAttemptAsync(first, confirmAdult, refresh, progress, cancellationToken, recovery, firstPage, validateStart).ConfigureAwait(false); }
         catch (SefanStoryScopeMismatchException) when (!SefanSource.IsNeutralGenre(first))
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -69,26 +71,22 @@ public sealed class StoryDownloader
             // A separate attempt has its own cache key and empty in-memory page
             // list. Its scope error, if any, is deliberately not retried again.
             return await DownloadAttemptAsync(SefanSource.WithNeutralGenre(first), confirmAdult, refresh,
-                progress, cancellationToken, recovery).ConfigureAwait(false);
+                progress, cancellationToken, recovery, validateStart: validateStart).ConfigureAwait(false);
         }
     }
 
     private async Task<BookDocument> DownloadAttemptAsync(Uri first, bool confirmAdult, bool refresh,
-        IProgress<DownloadProgress>? progress, CancellationToken cancellationToken, DownloadRecovery? recovery)
+        IProgress<DownloadProgress>? progress, CancellationToken cancellationToken, DownloadRecovery? recovery, StoryPage? firstPage = null,
+        Action<StoryPage>? validateStart = null)
     {
-        var cache = Path.Combine(_cacheDirectory, Hash(Encoding.UTF8.GetBytes(first.AbsoluteUri)).ToLowerInvariant());
+        var cache = PartCacheDirectory(first);
         var pages = new List<StoryPage>();
         var visited = new HashSet<string>(StringComparer.Ordinal);
         var fingerprints = new HashSet<string>(StringComparer.Ordinal);
         int? expectedTotal = null;
         long characters = 0;
         Uri? next = first;
-        Uri? replacement = null;
-        if (recovery?.ReplacementPageUrl is { } candidate)
-        {
-            try { replacement = SefanSource.SameStory(candidate, first); }
-            catch (Exception error) when (error is ArgumentException or SefanStoryScopeMismatchException) { }
-        }
+        Uri? replacement = GetReplacement(first, recovery);
         int? replacementNumber = replacement is not null ? SefanSource.PageNumber(replacement) : null;
         while (next is not null)
         {
@@ -96,11 +94,16 @@ public sealed class StoryDownloader
             if (!visited.Add(next.AbsoluteUri) || pages.Count >= MaxPages)
                 throw new InvalidDataException("Повтор страницы или превышен предел страниц; книга не создана.");
             var number = pages.Count + 1;
-            var page = refresh ? null : await ReadCacheAsync(cache, number, first, next, cancellationToken).ConfigureAwait(false);
+            var page = number == 1 ? firstPage : null;
+            page ??= refresh ? null : await ReadCacheAsync(cache, number, first, next, cancellationToken).ConfigureAwait(false);
             string? fingerprint = null;
             if (page is not null)
             {
-                try { fingerprint = ValidateChainPage(page, expectedTotal, fingerprints); }
+                try
+                {
+                    if (number == 1) validateStart?.Invoke(page);
+                    fingerprint = ValidateChainPage(page, expectedTotal, fingerprints);
+                }
                 catch (InvalidDataException) { page = null; }
             }
             var wasCached = page is not null;
@@ -115,6 +118,7 @@ public sealed class StoryDownloader
                 });
                 page = await _source.GetPageAsync(requested, confirmAdult, cancellationToken).ConfigureAwait(false);
                 ValidatePage(page, first, requested, number);
+                if (number == 1) validateStart?.Invoke(page);
                 fingerprint = ValidateChainPage(page, expectedTotal, fingerprints);
             }
             characters += page.Fragment.Length;
@@ -138,6 +142,19 @@ public sealed class StoryDownloader
         progress?.Report(new DownloadProgress(pages.Count, expectedTotal, "Все страницы проверены; подготовка книги"));
         return new BookDocument(pages[0].Title, pages[0].Author, first, paragraphs, pages.Count);
     }
+
+    private string PartCacheDirectory(Uri first) =>
+        Path.Combine(_cacheDirectory, Hash(Encoding.UTF8.GetBytes(first.AbsoluteUri)).ToLowerInvariant());
+
+    private static Uri GetAttemptStart(Uri first, bool refresh, DownloadRecovery? recovery)
+    {
+        if (refresh || recovery?.Checkpoint?.AttemptStartUrl is not { } saved) return first;
+        Uri neutral = SefanSource.WithNeutralGenre(first);
+        return neutral == saved ? neutral : first;
+    }
+
+    private static Uri? GetReplacement(Uri first, DownloadRecovery? recovery) =>
+        recovery?.ReplacementPageUrl is { } url && SefanSource.IsSameReadingStory(url, first) ? SefanSource.Normalize(url) : null;
 
     public static IReadOnlyList<string> JoinParagraphs(IEnumerable<StoryPage> pages)
     {
