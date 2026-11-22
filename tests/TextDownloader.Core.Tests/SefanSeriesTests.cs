@@ -103,7 +103,9 @@ internal static class SefanSeriesTests
             }
             catch (InvalidDataException) { }
             Require(handler.Requests.SequenceEqual(new[] { Page(3), Index }), "Incomplete index requested chapters.");
-            handler.Content[Index] = List(3, 1, 2) + $"<aside><a href='{Page(4)}'>Рекомендация</a></aside>";
+            handler.Content[Index] = "<div id='top' class='sefan'>" + IndexRow(Page(3), 3, "Часть 3", current: true) +
+                IndexRow(Page(1), 1, "Часть 1") + IndexRow(Page(2), 2, "Часть 2") +
+                $"<div class='tsb'><a href='{Page(4)}'>Рекомендация</a></div></div>";
             handler.Requests.Clear();
             var book = await downloader.DownloadAsync(new Uri(Page(3)), false, false, null, CancellationToken.None);
             Require(handler.Requests.SequenceEqual(new[] { Index, Page(1), Page(2) }), "Fallback did not use the selected index or included a recommendation.");
@@ -112,6 +114,69 @@ internal static class SefanSeriesTests
         }
         finally { if (Directory.Exists(folder)) Directory.Delete(folder, true); }
     }
+
+    public static async Task NoContentsMarkerAndCachedRetryAsync()
+    {
+        const string title = "Самостоятельный рассказ";
+        string first = DirectoryUrl + "chitat_standalone-fixture_1.html";
+        string second = DirectoryUrl + "chitat_standalone-fixture_1-2.html";
+        string index = DirectoryUrl + "vse-chasti/chitat_standalone-fixture.html";
+        string firstHtml = $"<h1>{title}</h1><div id='rsz'>Первая страница. <a href='{index}' " +
+            "title='Все части этого рассказа на одной странице'>Оглавления нет</a></div>" +
+            $"<a rel='next' href='{second}'>Далее</a><a rel='last' href='{second}'>Последняя</a>";
+        var folder = Path.Combine(Path.GetTempPath(), "TextDownloader.SefanSingle." + Guid.NewGuid().ToString("N"));
+        try
+        {
+            using var handler = new Pages(new()
+            {
+                [first] = firstHtml,
+                [second] = $"<h1>{title}</h1><div id='rsz'>Вторая страница.</div><a rel='last' href='{second}'>Последняя</a>",
+                [index] = $"<div id='top' class='sefan'><div class='p'><a href='{first}'>{title}</a></div>" +
+                    IndexRow(first, 1, title, current: true) +
+                    $"<div class='o nc'><a href='{Page(4)}'>Рекомендация</a></div></div>",
+            });
+            using var client = new HttpClient(handler);
+            using var source = new SefanSource(client, TimeSpan.Zero);
+            var selected = new Uri(first);
+            var fresh = await new StoryDownloader(source, Path.Combine(folder, "fresh"))
+                .DownloadAsync(selected, false, false, null, CancellationToken.None);
+            Require(handler.Requests.SequenceEqual(new[] { first, second }), "The 'no contents' marker triggered an index fetch.");
+            Require(fresh.Chapters is null && fresh.Paragraphs.SequenceEqual(new[] { "Первая страница. Вторая страница." }),
+                "The marker changed the standalone story text or chapter structure.");
+
+            string indexHtml = handler.Content[index];
+            // Older cache files contain the index URL and an empty chapter list
+            // for this marker. A normal link without a selector produces that same metadata.
+            handler.Content[first] = firstHtml.Replace("Оглавления нет", "Оглавление", StringComparison.Ordinal);
+            handler.Content[index] = "<h1>Страница недоступна</h1>";
+            var saved = new StoryDownloader(source, Path.Combine(folder, "saved"));
+            DownloadCheckpoint? checkpoint = null;
+            try
+            {
+                await saved.DownloadAsync(selected, false, false,
+                    new CaptureProgress(value => checkpoint = value.Checkpoint ?? checkpoint), CancellationToken.None);
+                throw new Exception("The unreadable index was accepted.");
+            }
+            catch (InvalidDataException) { }
+            Require(checkpoint?.LastSuccessfulPageUrl == selected && checkpoint.PendingPageUrl?.AbsoluteUri == index,
+                "Incomplete setup of the saved index checkpoint.");
+
+            handler.Content[first] = firstHtml;
+            handler.Content[index] = indexHtml;
+            handler.Requests.Clear();
+            var resumed = await saved.DownloadAsync(selected, false, false, null, CancellationToken.None,
+                new DownloadRecovery(checkpoint, null));
+            Require(handler.Requests.SequenceEqual(new[] { index, second }), "Retry did not reuse the first saved page.");
+            Require(resumed.Chapters is null && resumed.Paragraphs.SequenceEqual(fresh.Paragraphs),
+                "Retry did not recreate the same standalone story.");
+        }
+        finally { if (Directory.Exists(folder)) Directory.Delete(folder, true); }
+    }
+
+    private static string IndexRow(string url, int number, string label, bool current = false) =>
+        $"<div class='{(current ? "tso" : "ts")}'><a class='hud' href='{url}' title='{label}'>" +
+        $"<span class='lhup'><span class='o'>{number}.</span>&nbsp; {label}&nbsp;</span> " +
+        (current ? "<b class='but'>Эта часть</b>" : "") + "</a></div>";
 
     private static string Html(int chapter, string text, int number = 1, string? next = null, string contents = "") =>
         $"<h1>Тестовый цикл. Часть {chapter}</h1><div id='rsz'>{text}{contents}</div>" +

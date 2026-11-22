@@ -15,14 +15,16 @@ public sealed partial class SefanSource
             .Select(node => (Node: node, Url: ReadContentsLink(node, page)))
             .Where(link => link.Url is not null)
             .ToArray();
-        var indexes = links.Select(link => link.Url).Distinct().ToArray();
+        foreach (var link in links) excluded.Add(link.Node);
+        var contentsLinks = links.Where(link => !CleanText(Render(link.Node, false))
+            .Equals("Оглавления нет", StringComparison.OrdinalIgnoreCase)).ToArray();
+        var indexes = contentsLinks.Select(link => link.Url).Distinct().ToArray();
         if (indexes.Length > 1) throw new InvalidDataException("На странице Sefan найдено несколько разных ссылок на оглавление.");
         Uri? index = indexes.SingleOrDefault();
         if (index is null) return new SefanContents(null, []);
 
-        foreach (var link in links)
+        foreach (var link in contentsLinks)
         {
-            excluded.Add(link.Node);
             var form = link.Node.Ancestors("form").FirstOrDefault();
             if (form is null) continue;
             excluded.Add(form);
@@ -75,6 +77,23 @@ public sealed partial class SefanSource
         var original = ValidateIndexReplacement(index, index);
         var (document, actual) = await GetDocumentAsync(original, confirmAdult, token,
             candidate => ValidateIndexReplacement(original, candidate)).ConfigureAwait(false);
+
+        // Sefan's own contents page can lay out numbered chapters as
+        // sibling divs under #top. Breadcrumb and story excerpt links have no number marker.
+        var numberedLinks = document.GetElementbyId("top")?.Elements("div")
+            .SelectMany(row => row.Elements("a"))
+            .Where(anchor => anchor.Elements("span").Any(label => Tokens(label, "class").Contains("lhup") &&
+                label.Elements("span").Any(number => Tokens(number, "class").Contains("o") &&
+                    Regex.IsMatch(CleanText(Render(number, false)), @"^[1-9][0-9]*\.$"))))
+            .ToArray() ?? [];
+        if (numberedLinks.Length > 0)
+        {
+            var entries = numberedLinks.Select(link => ReadIndexLink(link, actual, selected)
+                ?? throw new InvalidDataException("В оглавлении Sefan найден недопустимый адрес части.")).ToArray();
+            if (entries.Any(entry => IsSameReadingStory(entry.Url, selected.Url))) return entries;
+            throw new InvalidDataException("В оглавлении Sefan не найдена выбранная часть рассказа.");
+        }
+
         // Choose the list, table or content block that contains the selected
         // chapter. Links elsewhere can point to recommendations and site navigation.
         var groups = document.DocumentNode.Descendants()
@@ -95,17 +114,23 @@ public sealed partial class SefanSource
         {
             if (node.Name == "a")
             {
-                if (!Uri.TryCreate(index, Attribute(node, "href"), out var url)) continue;
-                try { url = Normalize(url); }
-                catch (ArgumentException) { continue; }
-                if (PageNumber(url) == 1 && Language(url) == Language(selected.Url))
-                    entries.Add(new SefanContentsEntry(CleanText(Render(node, false)), url));
+                if (ReadIndexLink(node, index, selected) is { } entry) entries.Add(entry);
             }
             else if (node.Name is "li" or "b" or "strong" or "span" or "td" &&
                 !node.ChildNodes.Any(child => child.NodeType == HtmlNodeType.Element) && CleanText(Render(node, false)).Equals(selected.Title, StringComparison.OrdinalIgnoreCase))
                 entries.Add(new SefanContentsEntry(selected.Title, selected.Url));
         }
         return entries;
+    }
+
+    private static SefanContentsEntry? ReadIndexLink(HtmlNode anchor, Uri index, StoryPage selected)
+    {
+        if (!Uri.TryCreate(index, Attribute(anchor, "href"), out var url)) return null;
+        try { url = Normalize(url); }
+        catch (ArgumentException) { return null; }
+        return PageNumber(url) == 1 && Language(url) == Language(selected.Url)
+            ? new SefanContentsEntry(CleanText(Render(anchor, false)), url)
+            : null;
     }
 
     private static (Uri Index, Uri Chapter) NormalizeContentsUrl(Uri uri, string part = "1")
