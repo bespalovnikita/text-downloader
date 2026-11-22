@@ -30,6 +30,7 @@ internal static class Program
             ("Scope fallback retries neutral genre once without mixing partial text", NeutralGenreFallback),
             ("Neutral genre fallback preserves adult permission and non-scope failures", FallbackScopeAndPermission),
             ("HTTP page spacing is configurable and cancellable", PageSpacing),
+            ("HTTP journal records requests, statuses and retries", HttpJournal),
             ("HTML text, navigation, source whitespace and age gate", HtmlParsing),
             ("Age confirmation is sent only after explicit permission", AgeConfirmation),
             ("Complete chain joins words and punctuation without page headings", CompleteStory),
@@ -415,6 +416,24 @@ internal static class Program
         Equal(1, slowHandler.Requests.Count);
     }
 
+    private static async Task HttpJournal()
+    {
+        var retry = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+        retry.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.Zero);
+        using var handler = new SequenceHandler(retry, new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(PageHtml("Тест журнала.", total: 1), Encoding.UTF8, "text/html")
+        });
+        var log = new CaptureLog();
+        using var http = new HttpClient(handler);
+        using var source = new SefanSource(http, TimeSpan.Zero, log);
+        await source.GetPageAsync(Source, false, CancellationToken.None);
+        Equal(2, log.Events.Count(entry => entry.Level == DownloadLogLevel.Detail && entry.Message == $"GET {Source}"));
+        Check(log.Events.Any(entry => entry.Level == DownloadLogLevel.Warning && entry.Message.Contains("HTTP 429")), "Retry warning missing.");
+        Check(log.Events.Any(entry => entry.Level == DownloadLogLevel.Detail && entry.Message.Contains("HTTP 200")), "Response status missing.");
+        Check(log.Events.All(entry => !entry.Message.Contains("Тест журнала.")), "Response body leaked into the journal.");
+    }
+
     private static async Task AgeConfirmation()
     {
         const string gate = "<form action=''><input type='hidden' name='freed' value='1'><input type='hidden' name='nonce' value='synthetic-token'><input type='submit' name='fkay' value='Подтверждаю'></form>";
@@ -695,6 +714,12 @@ internal static class Program
     private sealed class InlineProgress(Action<DownloadProgress> report) : IProgress<DownloadProgress>
     {
         public void Report(DownloadProgress value) => report(value);
+    }
+
+    private sealed class CaptureLog : IProgress<DownloadLogEvent>
+    {
+        public List<DownloadLogEvent> Events { get; } = [];
+        public void Report(DownloadLogEvent value) => Events.Add(value);
     }
 
     private sealed class SequenceHandler : HttpMessageHandler

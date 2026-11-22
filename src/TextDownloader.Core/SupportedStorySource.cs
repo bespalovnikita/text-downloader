@@ -15,10 +15,16 @@ public sealed class SupportedStorySource : IBookStorySource
     /// <summary>Creates sources that share request spacing per site across previews and downloads.</summary>
     public static Func<TimeSpan, IStorySource> CreateFactory()
     {
+        var create = CreateLoggedFactory();
+        return interval => create(interval, null);
+    }
+
+    public static Func<TimeSpan, IProgress<DownloadLogEvent>?, IStorySource> CreateLoggedFactory()
+    {
         var sefanThrottle = new PageRequestThrottle();
         var bestweaponThrottle = new PageRequestThrottle();
-        return interval => new SupportedStorySource(new SefanSource(null, interval, sefanThrottle),
-            new BestweaponSource(null, interval, bestweaponThrottle));
+        return (interval, log) => new SupportedStorySource(new SefanSource(null, interval, sefanThrottle, log),
+            new BestweaponSource(null, interval, bestweaponThrottle, log));
     }
 
     public bool CanHandle(Uri uri) => _sefan.CanHandle(uri) || _bestweapon.CanHandle(uri);

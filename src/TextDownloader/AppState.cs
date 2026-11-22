@@ -75,6 +75,7 @@ public sealed class Settings
     public const decimal MaximumPageDelaySeconds = (decimal)long.MaxValue / TimeSpan.TicksPerSecond;
     public decimal PageDelaySeconds { get; set; } = 1m;
     public TimeSpan GetPageDelay() => TimeSpan.FromTicks((long)(PageDelaySeconds * TimeSpan.TicksPerSecond));
+    public DownloadLogLevel JournalLevel { get; set; } = DownloadLogLevel.Information;
     public bool MinimizeToTray { get; set; } = true;
     public double QueueWidth { get; set; } = 350;
     public double PreviewWidth { get; set; } = 350;
@@ -115,6 +116,8 @@ public sealed class AppStore
                 throw new InvalidDataException("Сохранение содержит недопустимые значения.");
             if (state.Settings.PageDelaySeconds is < Settings.MinimumPageDelaySeconds or > Settings.MaximumPageDelaySeconds)
                 state.Settings.PageDelaySeconds = 1m;
+            if (!Enum.IsDefined(state.Settings.JournalLevel))
+                state.Settings.JournalLevel = DownloadLogLevel.Information;
             foreach (var item in state.Queue.Where(q => q.Status == QueueStatus.Running))
             {
                 item.Status = QueueStatus.Paused;

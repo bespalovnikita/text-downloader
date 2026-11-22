@@ -23,6 +23,7 @@ public sealed class BestweaponSource : IBookStorySource
     private readonly bool _ownsClient;
     private readonly TimeSpan _requestInterval;
     private readonly PageRequestThrottle _requestThrottle;
+    private readonly IProgress<DownloadLogEvent>? _log;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private static readonly Regex PostPath = new(@"^/post_(?<id>[1-9][0-9]*)/?$", RegexOptions.CultureInvariant | RegexOptions.Compiled);
     private static readonly Regex NumberedTitle = new(
@@ -35,15 +36,18 @@ public sealed class BestweaponSource : IBookStorySource
 
     static BestweaponSource() => Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
-    public BestweaponSource(HttpClient? client = null, TimeSpan? requestInterval = null)
-        : this(client, requestInterval ?? TimeSpan.FromSeconds(1), new PageRequestThrottle()) { }
+    public BestweaponSource(HttpClient? client = null, TimeSpan? requestInterval = null,
+        IProgress<DownloadLogEvent>? log = null)
+        : this(client, requestInterval ?? TimeSpan.FromSeconds(1), new PageRequestThrottle(), log) { }
 
-    internal BestweaponSource(HttpClient? client, TimeSpan requestInterval, PageRequestThrottle requestThrottle)
+    internal BestweaponSource(HttpClient? client, TimeSpan requestInterval, PageRequestThrottle requestThrottle,
+        IProgress<DownloadLogEvent>? log)
     {
         if (requestInterval < TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(requestInterval));
         _requestInterval = requestInterval;
         _requestThrottle = requestThrottle;
+        _log = log;
         _ownsClient = client is null;
         _client = client ?? new HttpClient(new HttpClientHandler
         {
@@ -282,6 +286,7 @@ public sealed class BestweaponSource : IBookStorySource
                 try
                 {
                     validate(cached);
+                    _log?.Report(new(DownloadLogLevel.Detail, $"Публикация из кеша · {url.AbsoluteUri}"));
                     return cached;
                 }
                 catch (InvalidDataException) { }
@@ -371,7 +376,9 @@ public sealed class BestweaponSource : IBookStorySource
                         request.Headers.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml");
                         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
                         timeout.CancelAfter(TimeSpan.FromSeconds(30));
+                        _log?.Report(new(DownloadLogLevel.Detail, $"{request.Method} {current.AbsoluteUri}"));
                         using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
+                        _log?.Report(new(DownloadLogLevel.Detail, $"HTTP {(int)response.StatusCode} · {current.AbsoluteUri}"));
                         var actual = Normalize(response.RequestMessage?.RequestUri ?? current);
                         if (actual != requested) throw new InvalidDataException("Bestweapon перенаправил на другую публикацию.");
                         if ((int)response.StatusCode is 301 or 302 or 303 or 307 or 308)
@@ -412,12 +419,17 @@ public sealed class BestweaponSource : IBookStorySource
             {
                 if (attempt == 2 || error.Delay > TimeSpan.FromSeconds(60))
                     throw new HttpRequestException($"Bestweapon вернул HTTP {error.Status}. Повторите загрузку позднее.");
-                await Task.Delay(error.Delay < TimeSpan.Zero ? TimeSpan.Zero : error.Delay, token).ConfigureAwait(false);
+                var delay = error.Delay < TimeSpan.Zero ? TimeSpan.Zero : error.Delay;
+                _log?.Report(new(DownloadLogLevel.Warning, $"HTTP {error.Status}. Повтор запроса через {delay.TotalSeconds:0.###} с."));
+                await Task.Delay(delay, token).ConfigureAwait(false);
             }
             catch (Exception error) when (error is HttpRequestException || (error is OperationCanceledException && !token.IsCancellationRequested))
             {
                 if (attempt == 2) throw new HttpRequestException("Не удалось загрузить публикацию Bestweapon после повторных попыток.", error);
-                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt + 1)), token).ConfigureAwait(false);
+                var delay = TimeSpan.FromSeconds(Math.Pow(2, attempt + 1));
+                string reason = error is OperationCanceledException ? "Истёк тайм-аут запроса." : error.Message;
+                _log?.Report(new(DownloadLogLevel.Warning, $"{reason} Повтор запроса через {delay.TotalSeconds:0.###} с."));
+                await Task.Delay(delay, token).ConfigureAwait(false);
             }
         }
         throw new HttpRequestException("Не удалось загрузить публикацию Bestweapon.");

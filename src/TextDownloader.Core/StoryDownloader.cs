@@ -67,7 +67,8 @@ public sealed partial class StoryDownloader
         {
             cancellationToken.ThrowIfCancellationRequested();
             progress?.Report(new DownloadProgress(0, null,
-                "Сайт изменил маршрут рассказа. Повторяем загрузку с первой страницы через /i/."));
+                "Сайт изменил маршрут рассказа. Повторяем загрузку с первой страницы через /i/.")
+                { LogLevel = DownloadLogLevel.Warning });
             // A separate attempt has its own cache key and empty in-memory page
             // list. Its scope error, if any, is deliberately not retried again.
             return await DownloadAttemptAsync(SefanSource.WithNeutralGenre(first), confirmAdult, refresh,

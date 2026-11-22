@@ -23,9 +23,14 @@ public sealed record BookDocument(string Title, string? Author, Uri SourceUrl,
     public IReadOnlyList<BookChapter>? Chapters { get; init; }
 }
 
+public enum DownloadLogLevel { Detail, Information, Warning, Error }
+
+public sealed record DownloadLogEvent(DownloadLogLevel Level, string Message);
+
 public sealed record DownloadProgress(int CompletedPages, int? TotalPages, string Message)
 {
     public DownloadCheckpoint? Checkpoint { get; init; }
+    public DownloadLogLevel LogLevel { get; init; }
 }
 
 public sealed record DownloadCheckpoint(Uri AttemptStartUrl, Uri? LastSuccessfulPageUrl, Uri? PendingPageUrl);
