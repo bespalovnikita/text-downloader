@@ -99,6 +99,7 @@ try {
             body = $template.TrimEnd() + "`n`n" + $marker + "`n"
             draft = $true
             prerelease = $false
+            generate_release_notes = $true
         } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $payload -Encoding utf8NoBOM
         # The mutation response is authoritative. Tag/list lookup can lag after
         # creation, so do not immediately rediscover the draft through an index.
