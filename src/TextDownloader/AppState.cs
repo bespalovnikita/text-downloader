@@ -18,6 +18,7 @@ public sealed class QueueItem : INotifyPropertyChanged
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Url { get; set; } = "";
+    public bool UsesDedicatedCache { get; set; }
     public Guid? CacheRunId { get; set; }
     public bool ResumeDownload { get; set; }
     public Uri? ReplacementPageUrl { get; set; }
