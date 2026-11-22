@@ -9,12 +9,12 @@ Text Downloader — приложение Windows 10/11 x64 на C#, .NET 8 и WP
 
 | Область | Файлы |
 | --- | --- |
-| Очередь, предпросмотр, настройки и восстановление | `src/TextDownloader/MainWindow.xaml`, `MainWindow.xaml.cs`, `AppState.cs` |
-| Маршрутизация источников и интервал запросов | `src/TextDownloader.Core/SupportedStorySource.cs`, `PageRequestThrottle.cs` |
-| Нумерация, проверка страниц, кеш и точки продолжения | `src/TextDownloader.Core/StoryDownloader.cs`, `Models.cs` |
-| HTML Sefan и сборка цикла | `SefanSource.cs`, `SefanSource.Contents.cs`, `StoryDownloader.Sefan.cs` в проекте Core |
-| Разбор публикаций и оглавлений Bestweapon | `src/TextDownloader.Core/BestweaponSource.cs` |
-| Сборка, проверка и атомарная публикация книг | `src/TextDownloader.Core/BookExporter.cs` |
+| Очередь, предпросмотр, настройки и восстановление | `src/TextDownloader/MainWindow.xaml`, `MainWindow.xaml.cs`, `Storage/AppState.cs` и `Storage/QueueCache.cs` |
+| Реестр источников, контракт адаптера и сетевые запросы | `src/TextDownloader.Core/Sources/` |
+| Очередность страниц, проверка кеша и точки продолжения | `src/TextDownloader.Core/Downloads/`, `Storage/StoryCacheLayout.cs` |
+| Разбор Sefan и сборка связанных частей | `src/TextDownloader.Core/Sources/Sefan/` |
+| Разбор публикаций и оглавлений Bestweapon | `src/TextDownloader.Core/Sources/Bestweapon/` |
+| Сборка, проверка и атомарная публикация книг | `src/TextDownloader.Core/Export/BookExporter.cs` |
 | Обновления приложения | `Updates/` в проектах WPF и Core, `scripts/published-update-smoke.ps1` |
 
 ## Контракты загрузки
@@ -34,9 +34,10 @@ Text Downloader — приложение Windows 10/11 x64 на C#, .NET 8 и WP
   На Bestweapon собирается префикс цикла до выбранной публикации включительно.
 - Страница считается завершённой после проверки и записи в кеш. Перепроверьте
   последовательность, отпечатки и полноту даже при отсутствии сетевых запросов.
-  Возобновление должно использовать последовательный проверенный префикс.
-  Новая загрузка без кеша получает отдельный `CacheRunId` в сохранённой очереди.
-  Повтор ошибок, пауза и перезапуск продолжают эту же попытку.
+  Возобновление использует последовательный проверенный префикс. При старте
+  просроченные каталоги незавершённых попыток очищаются. Новая попытка без кеша
+  получает отдельный `CacheRunId`. Повтор, пауза и перезапуск используют этот же
+  каталог, пока кеш свежий.
 - `DownloadCheckpoint` хранит начало маршрута, последний успешный и ожидаемый
   адреса. Принятый вручную адрес обязан сохранять идентичность страницы.
   Проверка очереди и экспорт должны одинаково работать при автоматическом и
@@ -70,7 +71,6 @@ pwsh -NoProfile -File scripts/build.ps1 -Task Test
 pwsh -NoProfile -File scripts/build.ps1 -Task Publish
 ```
 
-GitHub Actions запускает обе команды для PR. Перед выпуском проверьте
-Windows CI и соответствие тега файлу `Version.props`. Пишите документацию
+GitHub Actions запускает обе команды для PR и автоматически выпускает проверенный результат слияния в `main`. Пишите документацию
 по-русски и сверяйте имена действий с интерфейсом.
 [Руководство пользователя](docs/USAGE.md) · [Сборка и выпуск](docs/DEVELOPMENT.md)

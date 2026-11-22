@@ -7,7 +7,7 @@ using HtmlAgilityPack;
 namespace TextDownloader.Core;
 
 /// <summary>Reader for numbered pages of one story in Sefan's stories section.</summary>
-public sealed partial class SefanSource : IStorySource
+public sealed partial class SefanSource : IStorySource, IPagedBookSource
 {
     private const int MaxResponseBytes = 4 * 1024 * 1024;
     private readonly HttpClient _client;
@@ -60,6 +60,37 @@ public sealed partial class SefanSource : IStorySource
         return new Uri("https://sefan.ru" + match.Groups["directory"].Value +
             match.Groups["slug"].Value + "_" + match.Groups["part"].Value + ".html");
     }
+
+    public StorySourceInfo Describe(Uri uri) => new("Sefan");
+
+    public string DescribePreview(StoryPage page) => page.Contents is { IndexUrl: not null } or { Entries.Count: > 1 }
+        ? "Связанные части из оглавления будут собраны в одну книгу."
+        : "Начало рассказа. Файлы появятся после завершения загрузки.";
+
+    public bool CanRecover(Uri uri)
+    {
+        if (CanHandle(uri)) return true;
+        try { _ = NormalizeContentsUrl(uri); return true; }
+        catch (ArgumentException) { return false; }
+    }
+
+    public Uri ValidateReplacementPage(Uri expected, Uri candidate) => ValidateReplacementUrl(expected, candidate);
+    public int? GetPageNumber(Uri uri) => PageNumber(uri);
+
+    public Uri ValidatePageRoute(Uri first, Uri candidate, int? expectedNumber)
+    {
+        var page = SameStory(candidate, first);
+        if (expectedNumber is { } number && PageNumber(page) != number)
+            throw new InvalidDataException("Нарушена последовательность страниц рассказа.");
+        return page;
+    }
+
+    public Uri? GetAlternateStart(Uri first, Exception? error = null) =>
+        (error is null or SefanStoryScopeMismatchException) && !IsNeutralGenre(first) ? WithNeutralGenre(first) : null;
+
+    Task<BookDocument> IPagedBookSource.DownloadSeriesAsync(StoryDownloader downloader, Uri first, bool confirmAdult,
+        bool refresh, IProgress<DownloadProgress>? progress, CancellationToken token, DownloadRecovery? recovery) =>
+        new SefanBookDownloader(this, downloader).DownloadAsync(first, confirmAdult, refresh, progress, token, recovery);
 
     public async Task<StoryPage> GetPageAsync(Uri uri, bool confirmAdult, CancellationToken cancellationToken)
     {
@@ -198,8 +229,7 @@ public sealed partial class SefanSource : IStorySource
         return match.Groups["page"].Success ? int.Parse(match.Groups["page"].Value, CultureInfo.InvariantCulture) : 1;
     }
 
-    internal static string CleanText(string text) => Regex.Replace(
-        Regex.Replace(text, @"[\x00-\x08\x0B\x0C\x0E-\x1F]", ""), @"[^\S\n]+", " ").Trim();
+    internal static string CleanText(string text) => StoryText.Clean(text);
 
     private static HtmlDocument LoadDocument(string html)
     {

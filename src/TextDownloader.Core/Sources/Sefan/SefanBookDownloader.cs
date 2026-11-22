@@ -2,7 +2,7 @@ using System.Text.RegularExpressions;
 
 namespace TextDownloader.Core;
 
-public sealed partial class StoryDownloader
+internal sealed class SefanBookDownloader(SefanSource source, StoryDownloader downloader)
 {
     private static readonly Regex ChapterNumber = new(@"(?:^|[\s(])(?:часть|глава|ч\.)\s*(?:№\s*)?(?<number>[1-9][0-9]*)\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
@@ -10,10 +10,10 @@ public sealed partial class StoryDownloader
     private static readonly Regex ChapterSuffix = new(@"[\s.,;:–—-]*\(?(?:часть|глава|ч\.)\s*(?:№\s*)?[1-9][0-9]*[\s).]*$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
-    private async Task<BookDocument> DownloadSefanBookAsync(SefanSource source, Uri requested, bool confirmAdult, bool refresh,
+    public async Task<BookDocument> DownloadAsync(Uri requested, bool confirmAdult, bool refresh,
         IProgress<DownloadProgress>? progress, CancellationToken token, DownloadRecovery? recovery)
     {
-        Uri first = GetAttemptStart(requested, refresh, recovery);
+        Uri first = downloader.GetAttemptStart(requested, refresh, recovery);
         StoryPage selected;
         try { selected = await LoadSefanStartAsync(first, progress).ConfigureAwait(false); }
         catch (SefanStoryScopeMismatchException) when (!SefanSource.IsNeutralGenre(first))
@@ -48,11 +48,11 @@ public sealed partial class StoryDownloader
             // Save the verified index with the first page so a failed chapter
             // can be retried without downloading the index again.
             selected = selected with { Contents = new SefanContents(null, entries) };
-            await WriteCacheAsync(PartCacheDirectory(first), selected, token).ConfigureAwait(false);
+            await StoryDownloader.WriteCacheAsync(downloader.PartCacheDirectory(first), selected, token).ConfigureAwait(false);
         }
 
         if (plan is null || plan.Count <= 1)
-            return await DownloadPartAsync(first, confirmAdult, refresh, progress, token, recovery, selected).ConfigureAwait(false);
+            return await downloader.DownloadPartAsync(first, confirmAdult, refresh, progress, token, recovery, selected).ConfigureAwait(false);
 
         var chapters = new List<BookChapter>(plan.Count);
         int completedPages = 0;
@@ -78,12 +78,12 @@ public sealed partial class StoryDownloader
                     Checkpoint = checkpoint is null ? null : checkpoint with { LastSuccessfulPageUrl = checkpoint.LastSuccessfulPageUrl ?? previousPage }
                 });
             });
-            var book = await DownloadPartAsync(isSelected ? first : entry.Url, confirmAdult, refresh, partProgress, token,
+            var book = await downloader.DownloadPartAsync(isSelected ? first : entry.Url, confirmAdult, refresh, partProgress, token,
                 recovery, isSelected ? selected : null, page => ValidateSefanChapter(page, entry.Label, author)).ConfigureAwait(false);
             author ??= book.Author;
             characters += book.Paragraphs.Sum(p => (long)p.Length);
             completedPages += book.PageCount;
-            if (characters > MaxStoryCharacters || completedPages > MaxPages)
+            if (characters > StoryDownloader.MaxStoryCharacters || completedPages > downloader.MaxPages)
                 throw new InvalidDataException("Цикл Sefan превышает допустимый объём одной книги.");
             chapters.Add(new BookChapter(book.Title, book.SourceUrl, book.Paragraphs));
         }
@@ -95,20 +95,20 @@ public sealed partial class StoryDownloader
 
         async Task<StoryPage> LoadSefanStartAsync(Uri start, IProgress<DownloadProgress>? report)
         {
-            string cache = PartCacheDirectory(start);
-            var page = refresh ? null : await ReadCacheAsync(cache, 1, start, start, token).ConfigureAwait(false);
+            string cache = downloader.PartCacheDirectory(start);
+            var page = refresh ? null : await downloader.ReadCacheAsync(cache, 1, start, start, token).ConfigureAwait(false);
             if (page?.Contents is not null) return page;
 
-            Uri? replacement = GetReplacement(start, recovery);
+            Uri? replacement = downloader.GetReplacement(start, recovery);
             Uri next = replacement is not null && SefanSource.PageNumber(replacement) == 1 ? replacement : start;
             report?.Report(new DownloadProgress(0, null, "Получаем первую страницу Sefan…")
             {
                 Checkpoint = new DownloadCheckpoint(start, null, next)
             });
             page = await source.GetPageAsync(next, confirmAdult, token).ConfigureAwait(false);
-            ValidatePage(page, start, next, 1);
-            ValidateChainPage(page, null, []);
-            await WriteCacheAsync(cache, page, token).ConfigureAwait(false);
+            downloader.ValidatePage(page, start, next, 1);
+            StoryDownloader.ValidateChainPage(page, null, []);
+            await StoryDownloader.WriteCacheAsync(cache, page, token).ConfigureAwait(false);
             return page;
         }
     }
@@ -125,7 +125,7 @@ public sealed partial class StoryDownloader
                 !SefanSource.IsSameReadingStory(byChapter[key].Url, normalized))
                 throw new InvalidDataException("Оглавление Sefan содержит противоречивые адреса части.");
         }
-        if (byChapter.Count > MaxPages)
+        if (byChapter.Count > downloader.MaxPages)
             throw new InvalidDataException("Оглавление Sefan превышает допустимое число частей.");
         if (!byChapter.Values.Any(entry => SefanSource.IsSameReadingStory(entry.Url, selected.Url)))
             throw new InvalidDataException("В оглавлении Sefan не найдена выбранная часть рассказа.");

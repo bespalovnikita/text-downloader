@@ -131,11 +131,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
     public string PageDelayError => _validPageDelay ? "" : "Введите задержку в секундах, от 0,1.";
-    private string _currentStatus = "Добавьте ссылку на рассказ Sefan или публикацию Bestweapon.";
+    private string _currentStatus = "Добавьте ссылку на страницу чтения.";
     public string CurrentStatus { get => _currentStatus; private set => Set(ref _currentStatus, value); }
-    private string _previewTitle = "Выберите рассказ";
+    private string _previewTitle = "Выберите произведение";
     public string PreviewTitle { get => _previewTitle; private set => Set(ref _previewTitle, value); }
-    private string _previewMetadata = "Sefan / Bestweapon · EPUB / FB2";
+    private string _previewMetadata = "EPUB / FB2";
     public string PreviewMetadata { get => _previewMetadata; private set => Set(ref _previewMetadata, value); }
     private string _previewStatus = "Сведения загружаются при выборе строки.";
     public string PreviewStatus { get => _previewStatus; private set => Set(ref _previewStatus, value); }
@@ -186,7 +186,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             QueueColumn.Width = new GridLength(Clamp(_settings.QueueWidth, 250, Math.Max(250, ActualWidth * .35)));
             PreviewColumn.Width = new GridLength(Clamp(_settings.PreviewWidth, 250, Math.Max(250, ActualWidth * .35)));
             foreach (string property in new[] { nameof(Format), nameof(OutputDirectory), nameof(ConfirmAdult), nameof(RefreshCache), nameof(MinimizeToTray) }) Changed(property);
-            CurrentStatus = Items.Count > 0 ? "Очередь восстановлена. Загрузка начнётся после нажатия «Скачать»." : "Добавьте ссылку на рассказ Sefan или публикацию Bestweapon.";
+            CurrentStatus = Items.Count > 0 ? "Очередь восстановлена. Загрузка начнётся после нажатия «Скачать»." : "Добавьте ссылку на страницу чтения.";
             Log($"Text Downloader {typeof(MainWindow).Assembly.GetName().Version}; профиль: {_store.DirectoryPath}");
         }
         catch (Exception error)
@@ -222,7 +222,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (IsUpdating || _closing) { CurrentStatus = "Добавление ссылок временно недоступно во время обновления."; return; }
         if (raw.Length > 1024 * 1024) { CurrentStatus = "Список ссылок слишком велик (не более 1 МиБ)."; return; }
         var candidates = Regex.Matches(raw, "https?://[^\\s<>\\\"']+", RegexOptions.IgnoreCase).Select(m => m.Value.TrimEnd(')', ',', ';')).ToArray();
-        if (candidates.Length == 0) { CurrentStatus = "Вставьте HTTPS-ссылку на рассказ Sefan или публикацию Bestweapon."; return; }
+        if (candidates.Length == 0) { CurrentStatus = "Вставьте HTTP- или HTTPS-ссылку на страницу чтения."; return; }
         if (Items.Count + candidates.Length > 10000) { CurrentStatus = "Очередь ограничена 10 000 ссылками."; return; }
         int added = 0, rejected = 0;
         QueueItem? first = null;
@@ -242,7 +242,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
             catch (Exception error) { rejected++; Log("Ссылка отклонена: " + error.Message, DownloadLogLevel.Warning); }
         }
-        CurrentStatus = $"Добавлено: {added}." + (rejected > 0 ? $" Не поддерживаются: {rejected}. Принимаются страницы чтения sefan.ru/stories и публикации bestweapon.cc/post_номер." : "");
+        CurrentStatus = $"Добавлено: {added}." + (rejected > 0 ? $" Не поддерживаются: {rejected}. Нужна ссылка на поддерживаемую страницу чтения." : "");
         Log(CurrentStatus, rejected > 0 ? DownloadLogLevel.Warning : DownloadLogLevel.Information);
         if (first is not null) SelectedItem = first;
         await SaveSafelyAsync();
@@ -267,8 +267,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _previewStop?.Dispose();
         _previewStop = new CancellationTokenSource();
         CancellationToken token = _previewStop.Token;
-        PreviewTitle = item?.DisplayTitle ?? "Выберите рассказ";
-        PreviewMetadata = item is null ? "Sefan / Bestweapon · EPUB / FB2" : SourceName(item.Url) + " · EPUB / FB2";
+        PreviewTitle = item?.DisplayTitle ?? "Выберите произведение";
+        PreviewMetadata = item is null ? "EPUB / FB2" : new Uri(item.Url).Host + " · EPUB / FB2";
         PreviewText = "";
         PreviewStatus = item is null ? "" : "Получаем сведения…";
         if (item is null) return;
@@ -283,27 +283,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Log("Запрос предпросмотра.", DownloadLogLevel.Detail, item);
         try
         {
-            StoryPage page = await Task.Run(async () =>
+            var (page, info, hint) = await Task.Run(async () =>
             {
                 using IStorySource source = _sourceFactory(pageDelay, log);
                 var downloader = new StoryDownloader(source, _store.CacheDirectory);
-                return await downloader.PreviewAsync(new Uri(item.Url), confirmAdult, token);
+                var preview = await downloader.PreviewAsync(new Uri(item.Url), confirmAdult, token);
+                return (preview, source.Describe(preview.Url), source.DescribePreview(preview));
             }, token);
             if (token.IsCancellationRequested || SelectedItem != item) return;
             item.Title = page.Title;
             PreviewTitle = page.Title;
-            string count = IsBestweapon(item.Url)
-                ? page.TotalPages is > 1 ? $" · всего в цикле: {page.TotalPages}" : page.TotalPages == 1 ? " · одна публикация" : " · части цикла определятся при загрузке"
-                : page.TotalPages is > 0 ? $" · страниц: {page.TotalPages}" : " · число страниц определится при загрузке";
-            PreviewMetadata = SourceName(page.Url.AbsoluteUri) + " · " + (string.IsNullOrWhiteSpace(page.Author) ? "Автор не указан" : page.Author) +
-                count;
+            string count = page.TotalPages is > 0 ? $" · {info.CountLabel}: {page.TotalPages}" : "";
+            PreviewMetadata = info.Name + " · " + (string.IsNullOrWhiteSpace(page.Author) ? "Автор не указан" : page.Author) + count;
             PreviewText = page.Fragment.Replace("\r\n", "\n").Trim();
             if (PreviewText.Length > 3000) PreviewText = PreviewText[..3000] + "…";
-            PreviewStatus = IsBestweapon(item.Url)
-                ? "Выбранная публикация и предыдущие части цикла будут собраны в одну книгу."
-                : page.Contents is { IndexUrl: not null } or { Entries.Count: > 1 }
-                    ? "Связанные части из оглавления будут собраны в одну книгу."
-                    : "Начало рассказа. Файлы появятся после завершения загрузки.";
+            PreviewStatus = hint;
         }
         catch (OperationCanceledException) { }
         catch (Exception error)
@@ -359,25 +353,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 CurrentStatus = item.DisplayTitle;
                 Log((recovery.Checkpoint is null ? "Начинаем загрузку" : "Продолжаем загрузку") + $" · {item.Url}", item: item);
                 var log = SourceJournal(item);
-                var progress = new Progress<DownloadProgress>(p =>
-                {
-                    if (item.Status != QueueStatus.Running) return;
-                    item.CompletedPages = p.CompletedPages;
-                    item.TotalPages = p.TotalPages;
-                    item.Message = p.Message;
-                    Log(p.Message, p.LogLevel, item);
-                    if (p.Checkpoint is not null) item.Checkpoint = p.Checkpoint;
-                    CurrentStatus = $"{item.DisplayTitle}: {CountLabel(item.Url)}: {p.CompletedPages}/{p.TotalPages?.ToString() ?? "?"} · {p.Message}";
-                    UpdateTray();
-                });
                 try
                 {
+                    var url = new Uri(item.Url);
+                    using IStorySource source = _sourceFactory(pageDelay, log);
+                    var info = source.Describe(url);
+                    var progress = new Progress<DownloadProgress>(p =>
+                    {
+                        if (item.Status != QueueStatus.Running) return;
+                        item.CompletedPages = p.CompletedPages;
+                        item.TotalPages = p.TotalPages;
+                        item.Message = p.Message;
+                        Log(p.Message, p.LogLevel, item);
+                        if (p.Checkpoint is not null) item.Checkpoint = p.Checkpoint;
+                        CurrentStatus = $"{item.DisplayTitle}: {info.CountLabel}: {p.CompletedPages}/{p.TotalPages?.ToString() ?? "?"} · {p.Message}";
+                        UpdateTray();
+                    });
                     await SaveOrThrowAsync();
                     var result = await Task.Run(async () =>
                     {
-                        using IStorySource source = _sourceFactory(pageDelay, log);
                         var downloader = new StoryDownloader(source, cache);
-                        BookDocument book = await downloader.DownloadAsync(new Uri(item.Url), confirmAdult, false, progress, token, recovery);
+                        BookDocument book = await downloader.DownloadAsync(url, confirmAdult, false, progress, token, recovery);
                         token.ThrowIfCancellationRequested();
                         log.Report(new(DownloadLogLevel.Information, $"Записываем книгу в формате {format}."));
                         IReadOnlyList<string> files = await BookExporter.ExportAsync(book, directory, format, token);
@@ -410,14 +406,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         item.Message = "Книга сохранена, но историю записать не удалось. " + string.Join("; ", item.Files);
                         throw;
                     }
-                    Log($"Готово. {CountLabel(item.Url)}: {result.Book.PageCount}. " + string.Join(", ", result.Files), item: item);
+                    Log($"Готово. {info.CountLabel}: {result.Book.PageCount}. " + string.Join(", ", result.Files), item: item);
                     if (SelectedItem == item)
                     {
                         // A slow network preview must not replace the completed
                         // book after a fast export from the page cache.
                         _previewStop?.Cancel();
                         PreviewTitle = result.Book.Title;
-                        PreviewMetadata = SourceName(result.Book.SourceUrl.AbsoluteUri) + " · " + (result.Book.Author ?? "Автор не указан") + $" · {CountLabel(item.Url)}: {result.Book.PageCount}";
+                        PreviewMetadata = info.Name + " · " + (result.Book.Author ?? "Автор не указан") + $" · {info.CountLabel}: {result.Book.PageCount}";
                         PreviewText = string.Join("\n\n", result.Book.Paragraphs.Take(12));
                         if (PreviewText.Length > 5000) PreviewText = PreviewText[..5000] + "…";
                         PreviewStatus = "Книга готова. Нажмите «Открыть книгу».";
@@ -499,10 +495,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
     private void ScheduleSave() { if (_initialized && !_closing && !IsUpdating && _store.CanWrite) { _saveTimer.Stop(); _saveTimer.Start(); } }
 
-    private static bool IsBestweapon(string url) => Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) &&
-        (uri.Host.Equals("bestweapon.cc", StringComparison.OrdinalIgnoreCase) || uri.Host.Equals("www.bestweapon.cc", StringComparison.OrdinalIgnoreCase));
-    private static string SourceName(string url) => IsBestweapon(url) ? "Bestweapon" : "Sefan";
-    private static string CountLabel(string url) => IsBestweapon(url) ? "частей" : "страниц";
     private bool Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
     {
         if (EqualityComparer<T>.Default.Equals(field, value)) return false;
@@ -571,9 +563,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (!Uri.TryCreate(RecoveryPageInput.Text.Trim(), UriKind.Absolute, out var uri))
                 throw new ArgumentException("Введите полный адрес страницы.");
-            item.ReplacementPageUrl = StoryDownloader.ValidateReplacementPage(expected, uri);
+            using IStorySource source = _sourceFactory(_settings.GetPageDelay(), null);
+            item.ReplacementPageUrl = source.ValidateReplacementPage(expected, uri);
         }
-        catch (Exception error) when (error is ArgumentException or SefanStoryScopeMismatchException)
+        catch (Exception error) when (error is ArgumentException or IOException or InvalidDataException)
         {
             RecoveryError.Text = error.Message;
             return;

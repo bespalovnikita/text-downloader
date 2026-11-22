@@ -3,6 +3,9 @@ using HtmlAgilityPack;
 
 namespace TextDownloader.Core;
 
+public sealed record SefanContentsEntry(string Label, Uri Url);
+public sealed record SefanContents(Uri? IndexUrl, IReadOnlyList<SefanContentsEntry> Entries);
+
 public sealed partial class SefanSource
 {
     private static readonly Regex ContentsPath = new(
