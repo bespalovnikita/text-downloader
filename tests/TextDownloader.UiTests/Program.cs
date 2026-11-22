@@ -21,6 +21,7 @@ internal static class Program
             {
                 Directory.CreateDirectory(Root);
                 await RunScenariosAsync();
+                await CacheCleanupUiTests.RunAsync(Path.Combine(Root, "cache-cleanup"));
                 await ManualRecoveryAsync();
                 await UpdateUiTests.RunAsync(Path.Combine(Root, "updates"));
                 await BestweaponUiTests.RunAsync(Path.Combine(Root, "bestweapon"));

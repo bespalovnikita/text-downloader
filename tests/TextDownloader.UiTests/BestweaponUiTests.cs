@@ -37,7 +37,7 @@ internal static class BestweaponUiTests
         Assert(item.Status == QueueStatus.Completed, "Bestweapon task failed: " + item.Message + "\n" + window.JournalText);
         Assert(trace.Books == 1 && trace.Previews.Count == 1 && trace.BookUrl == Input && !trace.ConfirmedAdult && !trace.Refresh,
             "Whole-book source contract was not called with the chosen URL/settings.");
-        Assert(trace.CacheDirectory == Path.Combine(profile, "cache"), "Whole-book source did not receive the profile cache.");
+        Assert(trace.CacheDirectory == Path.Combine(profile, "cache", "jobs", item.Id.ToString("N")), "Whole-book source did not receive the dedicated job cache.");
         Assert(item.CompletedPages == 3 && item.TotalPages == 3 && item.Files.Count == 2 && item.Files.All(File.Exists),
             "Bestweapon parts or EPUB/FB2 results were not published.");
         Assert(window.PreviewMetadata.Contains("Bestweapon", StringComparison.Ordinal) && window.PreviewMetadata.Contains("частей: 3", StringComparison.Ordinal),

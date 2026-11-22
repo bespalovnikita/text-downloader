@@ -26,6 +26,7 @@ namespace TextDownloader;
 public partial class MainWindow : Window, INotifyPropertyChanged
 {
     private readonly AppStore _store;
+    private readonly QueueCache _cache;
     private readonly Func<TimeSpan, IProgress<DownloadLogEvent>?, IStorySource> _sourceFactory;
     private readonly bool _enableTray;
     private readonly IAppUpdateClient _updateClient;
@@ -146,6 +147,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         IAppUpdateClient? updateClient = null, string? updateTargetDirectory = null)
     {
         _store = new AppStore(profileDirectory);
+        _cache = new QueueCache(_store.CacheDirectory);
         _sourceFactory = sourceFactory is null ? SupportedStorySource.CreateLoggedFactory() : (_, _) => sourceFactory();
         JournalView = CreateJournalView();
         _enableTray = enableTray;
@@ -162,10 +164,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         Loaded -= OnLoaded;
+        bool saveCleanup = false;
         try
         {
             StateSnapshot saved = await Task.Run(_store.LoadAsync);
+            var cleanup = await Task.Run(() => _cache.CleanExpired(saved, DateTimeOffset.UtcNow));
+            saveCleanup = cleanup.Reset > 0;
             _settings = saved.Settings;
+            if (cleanup.Removed > 0 || cleanup.Reset > 0)
+                Log($"Очистка кеша. Удалено каталогов: {cleanup.Removed}, сброшено заданий: {cleanup.Reset}.");
+            foreach (var warning in cleanup.Warnings)
+                Log("Не удалось проверить или очистить кеш: " + warning, DownloadLogLevel.Warning);
             Changed(nameof(JournalLevel));
             JournalView.Refresh();
             _pageDelayText = _settings.PageDelaySeconds.ToString(CultureInfo.CurrentCulture);
@@ -192,6 +201,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Changed(nameof(CanReceiveInput)); Changed(nameof(CanCopySelectedUrl)); Changed(nameof(CanOpenUpdates));
             _ready.TrySetResult(true);
             if (_enableTray && !_closing) CreateTray();
+            if (saveCleanup) ScheduleSave();
         }
     }
 
@@ -225,7 +235,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 if (!Uri.TryCreate(candidate, UriKind.Absolute, out Uri? uri) || !source.CanHandle(uri)) { rejected++; continue; }
                 string url = source.NormalizeToFirstPage(uri).AbsoluteUri;
                 if (Items.Any(item => item.Url == url)) continue;
-                var item = new QueueItem { Url = url };
+                var item = new QueueItem { Url = url, UsesDedicatedCache = true };
                 Attach(item);
                 first ??= item;
                 added++;
@@ -335,15 +345,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 ActiveItem = item;
                 if (refresh && !item.ResumeDownload && item.Status != QueueStatus.Paused)
                 {
+                    item.UsesDedicatedCache = true;
                     item.CacheRunId = Guid.NewGuid();
                     item.Checkpoint = null;
                     item.ReplacementPageUrl = null;
                 }
                 var recovery = new DownloadRecovery(item.Checkpoint, item.ReplacementPageUrl);
                 item.ResumeDownload = true;
-                string cache = item.CacheRunId is { } runId
-                    ? Path.Combine(_store.CacheDirectory, "refresh", runId.ToString("N"))
-                    : _store.CacheDirectory;
+                string cache = _cache.For(item);
+                bool markCache = item.UsesDedicatedCache;
                 item.Status = QueueStatus.Running;
                 item.Message = "Получаем текст…";
                 CurrentStatus = item.DisplayTitle;
@@ -371,6 +381,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         token.ThrowIfCancellationRequested();
                         log.Report(new(DownloadLogLevel.Information, $"Записываем книгу в формате {format}."));
                         IReadOnlyList<string> files = await BookExporter.ExportAsync(book, directory, format, token);
+                        if (markCache)
+                        {
+                            try { await QueueCache.MarkCompletedAsync(cache); }
+                            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                            { log.Report(new(DownloadLogLevel.Warning, "Не удалось отметить завершённый кеш: " + error.Message)); }
+                        }
                         return (Book: book, Files: files);
                     }, token);
                     // Export owns its cancellation/publication boundary. Once it returns,

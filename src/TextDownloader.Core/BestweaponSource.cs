@@ -78,7 +78,7 @@ public sealed class BestweaponSource : IBookStorySource
         IProgress<DownloadProgress>? progress, CancellationToken cancellationToken, DownloadRecovery? recovery = null)
     {
         var requested = Normalize(url);
-        var cache = Path.Combine(Path.GetFullPath(cacheDirectory), "bestweapon", Hash(Encoding.UTF8.GetBytes(requested.AbsoluteUri)).ToLowerInvariant());
+        var cache = StoryCacheLayout.Bestweapon(Path.GetFullPath(cacheDirectory), requested);
         progress?.Report(new DownloadProgress(0, null, "Читаем оглавление выбранной части Bestweapon…")
         {
             Checkpoint = new DownloadCheckpoint(requested, null, requested)

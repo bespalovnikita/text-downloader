@@ -145,7 +145,7 @@ public sealed partial class StoryDownloader
     }
 
     private string PartCacheDirectory(Uri first) =>
-        Path.Combine(_cacheDirectory, Hash(Encoding.UTF8.GetBytes(first.AbsoluteUri)).ToLowerInvariant());
+        StoryCacheLayout.Pages(_cacheDirectory, first);
 
     private static Uri GetAttemptStart(Uri first, bool refresh, DownloadRecovery? recovery)
     {
