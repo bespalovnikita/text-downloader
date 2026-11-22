@@ -20,6 +20,8 @@ public sealed partial class StoryDownloader
         {
             token.ThrowIfCancellationRequested();
             first = SefanSource.WithNeutralGenre(first);
+            progress?.Report(new DownloadProgress(0, null, "Сайт изменил маршрут рассказа. Повторяем запрос через /i/.")
+                { LogLevel = DownloadLogLevel.Warning });
             selected = await LoadSefanStartAsync(first, progress).ConfigureAwait(false);
         }
         var contents = selected.Contents!;

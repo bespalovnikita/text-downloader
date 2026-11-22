@@ -100,6 +100,7 @@ internal static class Program
         Assert(window.Items[1].Status == QueueStatus.Failed, "Age confirmation silently accepted");
         Assert(window.History.Count == 1, "Failed gate entered history");
         VerifyCopyUrls(window);
+        VerifyJournal(window);
         ((CheckBox)window.FindName("AdultCheck")).IsChecked = true;
         Click(window, "RetryButton");
         Assert(!window.IsBusy && window.Items[1].Status == QueueStatus.Queued, "Retry automatically started");
@@ -127,6 +128,7 @@ internal static class Program
         Assert(!restored.IsBusy && restored.Items[3].Status == QueueStatus.Queued, "Restore started a download");
         Assert(decimal.Parse(restored.PageDelayText, System.Globalization.CultureInfo.CurrentCulture) == 0.1m, "Delay did not restore");
         Assert(restored.OutputDirectory == Path.Combine(Root, "books") && restored.ConfirmAdult, "Settings did not restore");
+        Assert(restored.JournalLevel == DownloadLogLevel.Detail, "Journal level did not restore");
 
         // A cached export can beat a slow preview request. Completion must cancel
         // that request and keep the ready-book state in the real preview controls.
@@ -154,6 +156,31 @@ internal static class Program
         Assert(!corrupt.CanStart, "Corrupt state allowed download/start");
         await CloseAsync(corrupt);
         Assert(await File.ReadAllTextAsync(badFile) == damaged, "Corrupt profile overwritten");
+    }
+
+    private static void VerifyJournal(MainWindow window)
+    {
+        var level = (ComboBox)window.FindName("JournalLevelCombo");
+        var selectedOnly = (CheckBox)window.FindName("JournalSelectedCheck");
+        var journal = (ListBox)window.FindName("JournalBox");
+        Assert(window.JournalText.Contains("Очередь запущена") && !window.JournalText.Contains("[ПОДРОБНО]"),
+            "Normal journal filter did not show the general log");
+        level.SetCurrentValue(Selector.SelectedValueProperty, DownloadLogLevel.Detail);
+        Assert(window.JournalText.Contains("из кеша") && journal.Items.Count > 0, "Detailed entries were not recorded or shown");
+
+        selectedOnly.SetCurrentValue(ToggleButton.IsCheckedProperty, true);
+        Assert(window.SelectedItem == window.Items[1] && window.JournalText.Contains(window.Items[1].Url) &&
+            !window.JournalText.Contains(window.Items[0].Url) && !window.JournalText.Contains("Очередь запущена"),
+            "The selected journal included unrelated or global events");
+        window.SelectedItem = window.Items[0];
+        Assert(window.JournalText.Contains("Готово.") && !window.JournalText.Contains(window.Items[1].Url),
+            "The journal did not follow a change in selection");
+        window.SelectedItem = window.Items[1];
+        level.SetCurrentValue(Selector.SelectedValueProperty, DownloadLogLevel.Error);
+        Assert(window.JournalText.Contains("[ОШИБКА]") && !window.JournalText.Contains("[ПОДРОБНО]") &&
+            !window.JournalText.Contains("[ИНФО]"), "Error-only log filter is incorrect");
+        selectedOnly.SetCurrentValue(ToggleButton.IsCheckedProperty, false);
+        level.SetCurrentValue(Selector.SelectedValueProperty, DownloadLogLevel.Detail);
     }
 
     private static void VerifyCopyUrls(MainWindow window)

@@ -26,14 +26,13 @@ namespace TextDownloader;
 public partial class MainWindow : Window, INotifyPropertyChanged
 {
     private readonly AppStore _store;
-    private readonly Func<TimeSpan, IStorySource> _sourceFactory;
+    private readonly Func<TimeSpan, IProgress<DownloadLogEvent>?, IStorySource> _sourceFactory;
     private readonly bool _enableTray;
     private readonly IAppUpdateClient _updateClient;
     private readonly bool _ownsUpdateClient;
     private readonly string _updateTargetDirectory;
     private readonly DispatcherTimer _saveTimer = new() { Interval = TimeSpan.FromMilliseconds(600) };
     private readonly TaskCompletionSource<bool> _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private readonly List<string> _journal = new();
     private Settings _settings = new();
     private CancellationTokenSource? _sessionStop;
     private CancellationTokenSource? _previewStop;
@@ -62,6 +61,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (!Set(ref _selectedItem, value)) return;
             Changed(nameof(CanCopySelectedUrl));
+            if (JournalSelectedOnly) JournalView.Refresh();
             RefreshPageRecovery();
             if (_initialized && !IsUpdating) _previewTask = PreviewSelectedAsync(value);
         }
@@ -140,14 +140,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public string PreviewStatus { get => _previewStatus; private set => Set(ref _previewStatus, value); }
     private string _previewText = "";
     public string PreviewText { get => _previewText; private set => Set(ref _previewText, value); }
-    public string JournalText => string.Join(Environment.NewLine, _journal);
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public MainWindow(string profileDirectory, Func<IStorySource>? sourceFactory = null, bool enableTray = true,
         IAppUpdateClient? updateClient = null, string? updateTargetDirectory = null)
     {
         _store = new AppStore(profileDirectory);
-        _sourceFactory = sourceFactory is null ? SupportedStorySource.CreateFactory() : _ => sourceFactory();
+        _sourceFactory = sourceFactory is null ? SupportedStorySource.CreateLoggedFactory() : (_, _) => sourceFactory();
+        JournalView = CreateJournalView();
         _enableTray = enableTray;
         _ownsUpdateClient = updateClient is null;
         _updateClient = updateClient ?? new UpdateClient();
@@ -166,6 +166,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             StateSnapshot saved = await Task.Run(_store.LoadAsync);
             _settings = saved.Settings;
+            Changed(nameof(JournalLevel));
+            JournalView.Refresh();
             _pageDelayText = _settings.PageDelaySeconds.ToString(CultureInfo.CurrentCulture);
             _validPageDelay = true;
             Changed(nameof(PageDelayText));
@@ -181,7 +183,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch (Exception error)
         {
             CurrentStatus = "Не удалось прочитать сохранение. Исходный файл защищён от перезаписи. " + error.Message;
-            Log(CurrentStatus);
+            Log(CurrentStatus, DownloadLogLevel.Error);
         }
         finally
         {
@@ -215,7 +217,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         int added = 0, rejected = 0;
         QueueItem? first = null;
         TimeSpan pageDelay = _settings.GetPageDelay();
-        using IStorySource source = _sourceFactory(pageDelay);
+        using IStorySource source = _sourceFactory(pageDelay, null);
         foreach (string candidate in candidates)
         {
             try
@@ -228,10 +230,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 first ??= item;
                 added++;
             }
-            catch (Exception error) { rejected++; Log("Ссылка отклонена: " + error.Message); }
+            catch (Exception error) { rejected++; Log("Ссылка отклонена: " + error.Message, DownloadLogLevel.Warning); }
         }
         CurrentStatus = $"Добавлено: {added}." + (rejected > 0 ? $" Не поддерживаются: {rejected}. Принимаются страницы чтения sefan.ru/stories и публикации bestweapon.cc/post_номер." : "");
-        Log(CurrentStatus);
+        Log(CurrentStatus, rejected > 0 ? DownloadLogLevel.Warning : DownloadLogLevel.Information);
         if (first is not null) SelectedItem = first;
         await SaveSafelyAsync();
     }
@@ -267,11 +269,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         bool confirmAdult = ConfirmAdult;
         TimeSpan pageDelay = _settings.GetPageDelay();
+        var log = SourceJournal(item, "Предпросмотр · ");
+        Log("Запрос предпросмотра.", DownloadLogLevel.Detail, item);
         try
         {
             StoryPage page = await Task.Run(async () =>
             {
-                using IStorySource source = _sourceFactory(pageDelay);
+                using IStorySource source = _sourceFactory(pageDelay, log);
                 var downloader = new StoryDownloader(source, _store.CacheDirectory);
                 return await downloader.PreviewAsync(new Uri(item.Url), confirmAdult, token);
             }, token);
@@ -296,7 +300,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (SelectedItem != item || token.IsCancellationRequested) return;
             PreviewStatus = error.Message;
-            Log("Предпросмотр: " + error.Message);
+            Log("Предпросмотр: " + error.Message, DownloadLogLevel.Warning, item);
         }
     }
 
@@ -320,6 +324,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async Task RunSessionAsync(QueueItem[] pending, string directory, BookFormat format, bool confirmAdult, bool refresh, TimeSpan pageDelay, CancellationToken token)
     {
         string? sessionError = null;
+        Log($"Очередь запущена. Заданий: {pending.Length}. Формат: {format}. Интервал запросов: {pageDelay.TotalSeconds:0.#######} с.");
         try
         {
             await SaveOrThrowAsync();
@@ -342,12 +347,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 item.Status = QueueStatus.Running;
                 item.Message = "Получаем текст…";
                 CurrentStatus = item.DisplayTitle;
+                Log((recovery.Checkpoint is null ? "Начинаем загрузку" : "Продолжаем загрузку") + $" · {item.Url}", item: item);
+                var log = SourceJournal(item);
                 var progress = new Progress<DownloadProgress>(p =>
                 {
                     if (item.Status != QueueStatus.Running) return;
                     item.CompletedPages = p.CompletedPages;
                     item.TotalPages = p.TotalPages;
                     item.Message = p.Message;
+                    Log(p.Message, p.LogLevel, item);
                     if (p.Checkpoint is not null) item.Checkpoint = p.Checkpoint;
                     CurrentStatus = $"{item.DisplayTitle}: {CountLabel(item.Url)}: {p.CompletedPages}/{p.TotalPages?.ToString() ?? "?"} · {p.Message}";
                     UpdateTray();
@@ -357,10 +365,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     await SaveOrThrowAsync();
                     var result = await Task.Run(async () =>
                     {
-                        using IStorySource source = _sourceFactory(pageDelay);
+                        using IStorySource source = _sourceFactory(pageDelay, log);
                         var downloader = new StoryDownloader(source, cache);
                         BookDocument book = await downloader.DownloadAsync(new Uri(item.Url), confirmAdult, false, progress, token, recovery);
                         token.ThrowIfCancellationRequested();
+                        log.Report(new(DownloadLogLevel.Information, $"Записываем книгу в формате {format}."));
                         IReadOnlyList<string> files = await BookExporter.ExportAsync(book, directory, format, token);
                         return (Book: book, Files: files);
                     }, token);
@@ -385,7 +394,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         item.Message = "Книга сохранена, но историю записать не удалось. " + string.Join("; ", item.Files);
                         throw;
                     }
-                    Log($"Готово: {item.Title}; {CountLabel(item.Url)}: {result.Book.PageCount}; " + string.Join("; ", result.Files));
+                    Log($"Готово. {CountLabel(item.Url)}: {result.Book.PageCount}. " + string.Join(", ", result.Files), item: item);
                     if (SelectedItem == item)
                     {
                         // A slow network preview must not replace the completed
@@ -402,7 +411,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 {
                     item.Status = _stopReason == StopReason.Pause ? QueueStatus.Paused : QueueStatus.Cancelled;
                     item.Message = item.Status == QueueStatus.Paused ? "Пауза. Продолжение использует загруженные фрагменты." : "Загрузка отменена. Фрагменты сохранены в кеше.";
-                    Log(item.DisplayTitle + ": " + item.Message);
+                    Log(item.Message, item: item);
                     break;
                 }
                 catch (Exception error)
@@ -410,7 +419,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     if (!item.Message.StartsWith("Книга сохранена", StringComparison.Ordinal)) item.Message = error.Message;
                     item.Status = QueueStatus.Failed;
                     CurrentStatus = item.DisplayTitle + ": " + item.Message;
-                    Log("Ошибка: " + item.DisplayTitle + ": " + error.Message);
+                    Log(error.Message, DownloadLogLevel.Error, item);
                     if (_saveFailed) break;
                 }
             }
@@ -419,7 +428,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             sessionError = "Очередь остановлена: " + error.Message;
             CurrentStatus = sessionError;
-            Log(CurrentStatus);
+            Log(CurrentStatus, DownloadLogLevel.Error);
         }
         finally
         {
@@ -428,6 +437,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             CurrentStatus = sessionError ?? (_stopReason == StopReason.Pause ? "Пауза. Нажмите «Продолжить очередь»." :
                 _stopReason == StopReason.Cancel ? "Загрузка отменена." : _saveFailed ? "Ошибка сохранения состояния. Проверьте журнал и права на папку профиля." :
                 $"Очередь завершена. Готово: {Items.Count(q => q.Status == QueueStatus.Completed)}, ошибок: {Items.Count(q => q.Status == QueueStatus.Failed)}.");
+            if (sessionError is null) Log(CurrentStatus);
             await SaveSafelyAsync();
             UpdateTray();
         }
@@ -469,16 +479,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async Task SaveSafelyAsync()
     {
         try { await SaveOrThrowAsync(); }
-        catch (Exception error) { CurrentStatus = "Не удалось сохранить состояние: " + error.Message; Log(CurrentStatus); }
+        catch (Exception error) { CurrentStatus = "Не удалось сохранить состояние: " + error.Message; Log(CurrentStatus, DownloadLogLevel.Error); }
     }
     private void ScheduleSave() { if (_initialized && !_closing && !IsUpdating && _store.CanWrite) { _saveTimer.Stop(); _saveTimer.Start(); } }
 
-    private void Log(string message)
-    {
-        _journal.Add(DateTime.Now.ToString("HH:mm:ss") + "  " + message);
-        if (_journal.Count > 300) _journal.RemoveAt(0);
-        Changed(nameof(JournalText));
-    }
     private static bool IsBestweapon(string url) => Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) &&
         (uri.Host.Equals("bestweapon.cc", StringComparison.OrdinalIgnoreCase) || uri.Host.Equals("www.bestweapon.cc", StringComparison.OrdinalIgnoreCase));
     private static string SourceName(string url) => IsBestweapon(url) ? "Bestweapon" : "Sefan";
@@ -524,6 +528,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             item.ResumeDownload = true;
             item.Status = QueueStatus.Queued;
             item.Message = "Задание продолжится с первой незагруженной страницы.";
+            Log("Задание поставлено в очередь для продолжения.", item: item);
         }
         CurrentStatus = "Нажмите «Скачать очередь», чтобы повторить задания.";
         ScheduleSave();
@@ -560,6 +565,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         item.ResumeDownload = true;
         item.Status = QueueStatus.Queued;
         item.Message = "Адрес принят. Задание готово к продолжению.";
+        Log($"Адрес для продолжения принят · {item.ReplacementPageUrl}", item: item);
         CurrentStatus = "Нажмите «Скачать очередь», чтобы продолжить.";
         await SaveSafelyAsync();
     }
@@ -659,7 +665,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var picker = new SaveFileDialog { Title = "Сохранить журнал", Filter = "Текст (*.txt)|*.txt", FileName = "TextDownloader-journal.txt" };
         if (picker.ShowDialog(this) != true) return;
         try { await File.WriteAllTextAsync(picker.FileName, JournalText); }
-        catch (Exception error) { CurrentStatus = "Не удалось сохранить журнал: " + error.Message; }
+        catch (Exception error)
+        {
+            CurrentStatus = "Не удалось сохранить журнал: " + error.Message;
+            Log(CurrentStatus, DownloadLogLevel.Error);
+        }
     }
     private async void OnUpdate(object sender, RoutedEventArgs e)
     {
@@ -675,7 +685,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             await Dispatcher.Yield(DispatcherPriority.Background);
             if (!_closing) window.ShowDialog();
         }
-        catch (Exception error) { CurrentStatus = "Не удалось открыть обновления: " + error.Message; Log(CurrentStatus); }
+        catch (Exception error) { CurrentStatus = "Не удалось открыть обновления: " + error.Message; Log(CurrentStatus, DownloadLogLevel.Error); }
         finally
         {
             CurrentUpdateWindow = null;
@@ -737,7 +747,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _tray.DoubleClick += (_, _) => Dispatcher.BeginInvoke(ShowFromTray);
             UpdateTray();
         }
-        catch (Exception error) { Log("Трей недоступен: " + error.Message); }
+        catch (Exception error) { Log("Трей недоступен: " + error.Message, DownloadLogLevel.Warning); }
     }
     private void ShowFromTray() { Show(); WindowState = WindowState.Normal; Activate(); }
     private void UpdateTray()
@@ -781,7 +791,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             IsUpdating = false;
             Changed(nameof(CanStart)); Changed(nameof(CanEditSettings)); Changed(nameof(CanReceiveInput)); Changed(nameof(CanCopySelectedUrl)); Changed(nameof(CanOpenUpdates));
             CurrentStatus = "Перезапуск отменён: " + error.Message;
-            Log(CurrentStatus);
+            Log(CurrentStatus, DownloadLogLevel.Error);
             return;
         }
         if (_ownsUpdateClient && _updateClient is IDisposable ownedClient) ownedClient.Dispose();

@@ -14,6 +14,7 @@ public sealed partial class SefanSource : IStorySource
     private readonly bool _ownsClient;
     private readonly TimeSpan _requestInterval;
     private readonly PageRequestThrottle _requestThrottle;
+    private readonly IProgress<DownloadLogEvent>? _log;
     private static readonly Regex PathPattern = new(
         @"^(?<directory>/stories/(?<language>[a-z]{2})/\d+/(?<genre>[^/]+)/)(?<slug>[^/]+?)_(?<part>\d+)(?:-(?<page>\d+))?\.html$",
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
@@ -24,15 +25,18 @@ public sealed partial class SefanSource : IStorySource
 
     static SefanSource() => Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
-    public SefanSource(HttpClient? client = null, TimeSpan? requestInterval = null)
-        : this(client, requestInterval ?? TimeSpan.FromSeconds(1), new PageRequestThrottle()) { }
+    public SefanSource(HttpClient? client = null, TimeSpan? requestInterval = null,
+        IProgress<DownloadLogEvent>? log = null)
+        : this(client, requestInterval ?? TimeSpan.FromSeconds(1), new PageRequestThrottle(), log) { }
 
-    internal SefanSource(HttpClient? client, TimeSpan requestInterval, PageRequestThrottle requestThrottle)
+    internal SefanSource(HttpClient? client, TimeSpan requestInterval, PageRequestThrottle requestThrottle,
+        IProgress<DownloadLogEvent>? log)
     {
         if (requestInterval < TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(requestInterval));
         _requestInterval = requestInterval;
         _requestThrottle = requestThrottle;
+        _log = log;
         _ownsClient = client is null;
         _client = client ?? new HttpClient(new HttpClientHandler
         {
@@ -247,7 +251,9 @@ public sealed partial class SefanSource : IStorySource
                         if (usePost) request.Content = new FormUrlEncodedContent(form!);
                         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                         timeout.CancelAfter(TimeSpan.FromSeconds(30));
+                        _log?.Report(new(DownloadLogLevel.Detail, $"{request.Method} {current.AbsoluteUri}"));
                         using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
+                        _log?.Report(new(DownloadLogLevel.Detail, $"HTTP {(int)response.StatusCode} · {current.AbsoluteUri}"));
                         var actual = validate(response.RequestMessage?.RequestUri ?? current);
                         if ((int)response.StatusCode is 301 or 302 or 303 or 307 or 308)
                         {
@@ -287,12 +293,17 @@ public sealed partial class SefanSource : IStorySource
             {
                 if (attempt == 2 || error.Delay > TimeSpan.FromSeconds(60))
                     throw new HttpRequestException($"Сайт вернул HTTP {error.Status}. Повторите загрузку позднее.");
-                await Task.Delay(error.Delay < TimeSpan.Zero ? TimeSpan.Zero : error.Delay, cancellationToken).ConfigureAwait(false);
+                var delay = error.Delay < TimeSpan.Zero ? TimeSpan.Zero : error.Delay;
+                _log?.Report(new(DownloadLogLevel.Warning, $"HTTP {error.Status}. Повтор запроса через {delay.TotalSeconds:0.###} с."));
+                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception error) when (error is HttpRequestException || (error is OperationCanceledException && !cancellationToken.IsCancellationRequested))
             {
                 if (attempt == 2) throw new HttpRequestException("Не удалось загрузить страницу после повторных попыток.", error);
-                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt + 1)), cancellationToken).ConfigureAwait(false);
+                var delay = TimeSpan.FromSeconds(Math.Pow(2, attempt + 1));
+                string reason = error is OperationCanceledException ? "Истёк тайм-аут запроса." : error.Message;
+                _log?.Report(new(DownloadLogLevel.Warning, $"{reason} Повтор запроса через {delay.TotalSeconds:0.###} с."));
+                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
             }
         }
         throw new HttpRequestException("Не удалось загрузить страницу.");

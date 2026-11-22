@@ -84,7 +84,37 @@
       <Button x:Name="UseRecoveryPageButton" Content="Принять адрес" HorizontalAlignment="Left" Click="OnUseRecoveryPage" IsEnabled="{Binding CanEditSettings}"/>
      </StackPanel>
      <Expander Grid.Row="4" Header="Журнал" Foreground="#EEF1F8" Margin="0,12,0,0">
-      <Grid><Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions><TextBox x:Name="JournalBox" Text="{Binding JournalText,Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" Height="140" VerticalScrollBarVisibility="Auto"/><Button Grid.Row="1" Content="Сохранить журнал…" HorizontalAlignment="Right" Click="OnSaveJournal"/></Grid>
+      <StackPanel>
+       <WrapPanel Margin="0,0,0,6">
+        <ComboBox x:Name="JournalLevelCombo" Width="145" AutomationProperties.Name="Уровень журнала"
+                  SelectedValuePath="Tag" SelectedValue="{Binding JournalLevel,Mode=TwoWay}">
+         <ComboBoxItem Tag="{x:Static core:DownloadLogLevel.Detail}" Content="Подробно"/>
+         <ComboBoxItem Tag="{x:Static core:DownloadLogLevel.Information}" Content="Обычный"/>
+         <ComboBoxItem Tag="{x:Static core:DownloadLogLevel.Warning}" Content="Предупреждения"/>
+         <ComboBoxItem Tag="{x:Static core:DownloadLogLevel.Error}" Content="Только ошибки"/>
+        </ComboBox>
+        <CheckBox x:Name="JournalSelectedCheck" Content="Выбранная загрузка" Margin="10,5,0,5"
+                  IsChecked="{Binding JournalSelectedOnly,Mode=TwoWay}"
+                  ToolTip="Показывать события выбранной строки очереди или загрузок"/>
+       </WrapPanel>
+       <ListBox x:Name="JournalBox" Height="140" ItemsSource="{Binding JournalView}" SelectionMode="Extended"
+                AutomationProperties.Name="Записи журнала" ScrollViewer.VerticalScrollBarVisibility="Auto"
+                ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.CanContentScroll="True"
+                VirtualizingPanel.VirtualizationMode="Recycling">
+        <ListBox.CommandBindings>
+         <CommandBinding Command="Copy" CanExecute="OnCanCopyJournal" Executed="OnCopyJournal"/>
+        </ListBox.CommandBindings>
+        <ListBox.ItemContainerStyle>
+         <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+          <Setter Property="Padding" Value="3,1"/>
+         </Style>
+        </ListBox.ItemContainerStyle>
+        <ListBox.ItemTemplate>
+         <DataTemplate><TextBlock Text="{Binding Line}" TextWrapping="Wrap"/></DataTemplate>
+        </ListBox.ItemTemplate>
+       </ListBox>
+       <Button Content="Сохранить журнал…" HorizontalAlignment="Right" Click="OnSaveJournal"/>
+      </StackPanel>
      </Expander>
     </Grid>
    </Border>
