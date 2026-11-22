@@ -40,6 +40,7 @@ internal static class Program
             ("Resuming reuses exactly the validated prefix after a page failure", ResumeAfterPageFailure),
             ("A corrected URL retries the pending page without changing the story", ManualPageRecovery),
             ("Preview does not download the entire story", Preview),
+            ("A new registered source can use the common page downloader", RegisteredSource),
             ("Sefan selector collects earlier and later chapters and resumes within a chapter", SefanSeriesTests.InlineContentsAndResumeAsync),
             ("Sefan uses a separate contents page and rejects gaps", SefanSeriesTests.SeparateContentsAsync),
             ("Sefan standalone stories skip the no-contents link and retry from saved pages", SefanSeriesTests.NoContentsMarkerAndCachedRetryAsync),
@@ -626,6 +627,41 @@ internal static class Program
         Sequence(new[] { Source }, source.Calls);
     }
 
+    private static async Task RegisteredSource()
+    {
+        using var folder = new TemporaryDirectory();
+        var adapter = new SyntheticNovelSource();
+        using var sources = new SupportedStorySource(new IStorySource[] { new SefanSource(), adapter });
+        var downloader = new StoryDownloader(sources, folder.Path);
+        Equal("глав", sources.Describe(SyntheticNovelSource.Second).CountLabel);
+        Equal(SyntheticNovelSource.First, sources.NormalizeToFirstPage(SyntheticNovelSource.Second));
+        var preview = await downloader.PreviewAsync(SyntheticNovelSource.Second, false, CancellationToken.None);
+        Equal(SyntheticNovelSource.First, preview.Url);
+        var book = await downloader.DownloadAsync(SyntheticNovelSource.Second, false, false, null, CancellationToken.None);
+        Equal(2, book.PageCount);
+        Sequence(new[] { "Искусственное начало.", "Окончание произведения." }, book.Paragraphs);
+        Sequence(new[] { SyntheticNovelSource.First, SyntheticNovelSource.First, SyntheticNovelSource.Second }, adapter.Calls);
+    }
+
+    private sealed class SyntheticNovelSource : IStorySource
+    {
+        public static readonly Uri First = new("https://example.invalid/novels/example");
+        public static readonly Uri Second = new("https://example.invalid/novels/example?cursor=synthetic");
+        public List<Uri> Calls { get; } = [];
+        public bool CanHandle(Uri uri) => uri == First || uri == Second;
+        public Uri NormalizeToFirstPage(Uri uri) => CanHandle(uri) ? First : throw new ArgumentException();
+        public StorySourceInfo Describe(Uri uri) => new("Тестовый каталог", "глав");
+        public Task<StoryPage> GetPageAsync(Uri uri, bool confirmAdult, CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            Calls.Add(uri);
+            return Task.FromResult(uri == First
+                ? new StoryPage(uri, 1, "Тестовое произведение", null, "Искусственное начало.\n", Second, 2)
+                : new StoryPage(uri, 2, "Тестовое произведение", null, "Окончание произведения.", null, 2));
+        }
+        public void Dispose() { }
+    }
+
     private static BookDocument Book() => new("Тест <&> «Книга»", "Автор & Соавтор", Source,
         new[] { "Первый <не тег> & абзац.", "Юникод 😀 и новая\nстрока.", "Третий абзац." }, 7);
 
@@ -738,32 +774,38 @@ internal static class Program
         try { await action(); } catch (T) { return; } throw new InvalidOperationException("Expected exception " + typeof(T).Name);
     }
 
-    private sealed class FakeSource(Dictionary<Uri, string> pages) : IStorySource
+    private abstract class SefanTestSource : IStorySource
+    {
+        private readonly SefanSource _routes = new();
+        public bool CanHandle(Uri uri) => _routes.CanHandle(uri);
+        public Uri NormalizeToFirstPage(Uri uri) => _routes.NormalizeToFirstPage(uri);
+        public int? GetPageNumber(Uri uri) => _routes.GetPageNumber(uri);
+        public Uri ValidatePageRoute(Uri first, Uri candidate, int? number) => _routes.ValidatePageRoute(first, candidate, number);
+        public Uri? GetAlternateStart(Uri first, Exception? error = null) => _routes.GetAlternateStart(first, error);
+        public abstract Task<StoryPage> GetPageAsync(Uri uri, bool confirmAdult, CancellationToken token);
+        public void Dispose() => _routes.Dispose();
+    }
+
+    private sealed class FakeSource(Dictionary<Uri, string> pages) : SefanTestSource
     {
         public List<Uri> Calls { get; } = [];
         public List<bool> Confirmations { get; } = [];
-        public bool CanHandle(Uri uri) { using var source = new SefanSource(); return source.CanHandle(uri); }
-        public Uri NormalizeToFirstPage(Uri uri) { using var source = new SefanSource(); return source.NormalizeToFirstPage(uri); }
-        public Task<StoryPage> GetPageAsync(Uri uri, bool confirmAdult, CancellationToken token)
+        public override Task<StoryPage> GetPageAsync(Uri uri, bool confirmAdult, CancellationToken token)
         {
             token.ThrowIfCancellationRequested(); Calls.Add(uri); Confirmations.Add(confirmAdult);
             if (!pages.TryGetValue(uri, out string? html)) throw new IOException("Synthetic page unavailable: " + uri);
             return Task.FromResult(SefanSource.Parse(html, uri));
         }
-        public void Dispose() { }
     }
 
-    private sealed class FailingSource(Exception error) : IStorySource
+    private sealed class FailingSource(Exception error) : SefanTestSource
     {
         public List<Uri> Calls { get; } = [];
-        public bool CanHandle(Uri uri) { using var source = new SefanSource(); return source.CanHandle(uri); }
-        public Uri NormalizeToFirstPage(Uri uri) { using var source = new SefanSource(); return source.NormalizeToFirstPage(uri); }
-        public Task<StoryPage> GetPageAsync(Uri uri, bool confirmAdult, CancellationToken token)
+        public override Task<StoryPage> GetPageAsync(Uri uri, bool confirmAdult, CancellationToken token)
         {
             Calls.Add(uri);
             return Task.FromException<StoryPage>(error);
         }
-        public void Dispose() { }
     }
 
     private sealed class InlineProgress(Action<DownloadProgress> report) : IProgress<DownloadProgress>

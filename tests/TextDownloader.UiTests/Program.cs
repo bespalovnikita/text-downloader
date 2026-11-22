@@ -294,6 +294,9 @@ internal static class Program
         private readonly SefanSource _urls = new();
         public bool CanHandle(Uri uri) => _urls.CanHandle(uri);
         public Uri NormalizeToFirstPage(Uri uri) => _urls.NormalizeToFirstPage(uri);
+        public int? GetPageNumber(Uri uri) => _urls.GetPageNumber(uri);
+        public Uri ValidatePageRoute(Uri first, Uri candidate, int? number) => _urls.ValidatePageRoute(first, candidate, number);
+        public Uri ValidateReplacementPage(Uri expected, Uri candidate) => _urls.ValidateReplacementPage(expected, candidate);
         public async Task<StoryPage> GetPageAsync(Uri uri, bool confirmAdult, CancellationToken cancellationToken)
         {
             if (uri.AbsoluteUri == network.FailedPage) throw new IOException("Synthetic connection failure");

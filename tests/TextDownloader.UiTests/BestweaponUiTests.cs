@@ -109,6 +109,7 @@ internal static class BestweaponUiTests
     }
     private sealed class SyntheticBookSource(Calls calls) : IBookStorySource
     {
+        public StorySourceInfo Describe(Uri uri) => new("Bestweapon", "частей");
         public bool CanHandle(Uri uri) => uri.IsAbsoluteUri && uri.Scheme == "https" && uri.Host == "bestweapon.cc" &&
             Regex.IsMatch(uri.AbsolutePath, @"^/post_[1-9]\d*$", RegexOptions.CultureInvariant);
         public Uri NormalizeToFirstPage(Uri uri) => CanHandle(uri) ? new Uri("https://bestweapon.cc" + uri.AbsolutePath) : throw new ArgumentException("Unsupported synthetic URL.");

@@ -11,9 +11,6 @@ public sealed record StoryPage(Uri Url, int Number, string Title, string? Author
     public SefanContents? Contents { get; init; }
 }
 
-public sealed record SefanContentsEntry(string Label, Uri Url);
-public sealed record SefanContents(Uri? IndexUrl, IReadOnlyList<SefanContentsEntry> Entries);
-
 public sealed record BookChapter(string Title, Uri SourceUrl, IReadOnlyList<string> Paragraphs);
 
 public sealed record BookDocument(string Title, string? Author, Uri SourceUrl,
@@ -36,13 +33,6 @@ public sealed record DownloadProgress(int CompletedPages, int? TotalPages, strin
 public sealed record DownloadCheckpoint(Uri AttemptStartUrl, Uri? LastSuccessfulPageUrl, Uri? PendingPageUrl);
 
 public sealed record DownloadRecovery(DownloadCheckpoint? Checkpoint, Uri? ReplacementPageUrl);
-
-public interface IStorySource : IDisposable
-{
-    bool CanHandle(Uri uri);
-    Uri NormalizeToFirstPage(Uri uri);
-    Task<StoryPage> GetPageAsync(Uri uri, bool confirmAdult, CancellationToken cancellationToken);
-}
 
 public sealed class AgeConfirmationRequiredException : Exception
 {

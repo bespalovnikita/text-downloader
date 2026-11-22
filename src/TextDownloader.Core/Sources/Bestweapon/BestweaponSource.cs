@@ -65,6 +65,16 @@ public sealed class BestweaponSource : IBookStorySource
     // Finding earlier parts requires the actual post's authoritative TOC and is asynchronous.
     public Uri NormalizeToFirstPage(Uri uri) => Normalize(uri);
 
+    public StorySourceInfo Describe(Uri uri) => new("Bestweapon", "частей");
+    public string DescribePreview(StoryPage page) => "Выбранная публикация и предыдущие части цикла будут собраны в одну книгу.";
+
+    public Uri ValidateReplacementPage(Uri expected, Uri candidate)
+    {
+        var replacement = Normalize(candidate);
+        if (Normalize(expected) == replacement) return replacement;
+        throw new ArgumentException("Укажите адрес той же публикации.");
+    }
+
     public async Task<StoryPage> GetPageAsync(Uri uri, bool confirmAdult, CancellationToken cancellationToken)
     {
         // This source never submits login or age forms, regardless of the Sefan-specific option.
