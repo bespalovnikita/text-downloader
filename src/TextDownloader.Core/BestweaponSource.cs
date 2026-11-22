@@ -366,7 +366,7 @@ public sealed class BestweaponSource : IBookStorySource
             try
             {
                 var current = requested;
-                for (int redirect = 0; redirect <= 5; redirect++)
+                for (int redirect = 0; redirect <= StoryRedirect.Limit; redirect++)
                 {
                     await _requestThrottle.EnterAsync(_requestInterval, token).ConfigureAwait(false);
                     try
@@ -376,16 +376,17 @@ public sealed class BestweaponSource : IBookStorySource
                         request.Headers.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml");
                         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
                         timeout.CancelAfter(TimeSpan.FromSeconds(30));
-                        _log?.Report(new(DownloadLogLevel.Detail, $"{request.Method} {current.AbsoluteUri}"));
+                        string logAddress = current.GetLeftPart(UriPartial.Path);
+                        _log?.Report(new(DownloadLogLevel.Detail, $"{request.Method} {logAddress}"));
                         using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
-                        _log?.Report(new(DownloadLogLevel.Detail, $"HTTP {(int)response.StatusCode} · {current.AbsoluteUri}"));
-                        var actual = Normalize(response.RequestMessage?.RequestUri ?? current);
-                        if (actual != requested) throw new InvalidDataException("Bestweapon перенаправил на другую публикацию.");
-                        if ((int)response.StatusCode is 301 or 302 or 303 or 307 or 308)
+                        _log?.Report(new(DownloadLogLevel.Detail, $"HTTP {(int)response.StatusCode} · {logAddress}"));
+                        var actual = response.RequestMessage?.RequestUri ?? current;
+                        if (Normalize(actual) != requested) throw new InvalidDataException("Bestweapon перенаправил на другую публикацию.");
+                        if (StoryRedirect.IsRedirect(response.StatusCode))
                         {
-                            if (redirect == 5 || response.Headers.Location is null) throw new InvalidDataException("Слишком много перенаправлений Bestweapon.");
-                            current = Normalize(new Uri(actual, response.Headers.Location));
-                            if (current != requested) throw new InvalidDataException("Bestweapon перенаправил на другую публикацию.");
+                            var target = StoryRedirect.ReadLocation(actual, response, redirect);
+                            if (Normalize(target) != requested) throw new InvalidDataException("Bestweapon перенаправил на другую публикацию.");
+                            current = StoryRedirect.ForRequest(target);
                             continue;
                         }
                         if ((int)response.StatusCode is 429 or 500 or 502 or 503 or 504)

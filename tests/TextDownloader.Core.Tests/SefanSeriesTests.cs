@@ -103,12 +103,14 @@ internal static class SefanSeriesTests
             }
             catch (InvalidDataException) { }
             Require(handler.Requests.SequenceEqual(new[] { Page(3), Index }), "Incomplete index requested chapters.");
-            handler.Content[Index] = "<div id='top' class='sefan'>" + IndexRow(Page(3), 3, "Часть 3", current: true) +
+            const string query = "?layout=synthetic";
+            handler.TemporaryRedirects[Index] = query;
+            handler.Content[Index + query] = "<div id='top' class='sefan'>" + IndexRow(Page(3), 3, "Часть 3", current: true) +
                 IndexRow(Page(1), 1, "Часть 1") + IndexRow(Page(2), 2, "Часть 2") +
                 $"<div class='tsb'><a href='{Page(4)}'>Рекомендация</a></div></div>";
             handler.Requests.Clear();
             var book = await downloader.DownloadAsync(new Uri(Page(3)), false, false, null, CancellationToken.None);
-            Require(handler.Requests.SequenceEqual(new[] { Index, Page(1), Page(2) }), "Fallback did not use the selected index or included a recommendation.");
+            Require(handler.Requests.SequenceEqual(new[] { Index, Index + query, Page(1), Page(2) }), "Fallback did not follow the index redirect or included a recommendation.");
             Require(book.Chapters!.Select(chapter => chapter.SourceUrl.AbsoluteUri).SequenceEqual(Enumerable.Range(1, 3).Select(n => Page(n))),
                 "The explicit chapter numbers did not control output order.");
         }
@@ -196,12 +198,16 @@ internal static class SefanSeriesTests
     private sealed class Pages(Dictionary<string, string> content) : HttpMessageHandler
     {
         public Dictionary<string, string> Content { get; } = content;
+        public Dictionary<string, string> TemporaryRedirects { get; } = [];
         public List<string> Requests { get; } = [];
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
             string uri = request.RequestUri!.AbsoluteUri;
             Requests.Add(uri);
+            if (TemporaryRedirects.TryGetValue(uri, out var target))
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.TemporaryRedirect)
+                { Headers = { Location = new Uri(target, UriKind.RelativeOrAbsolute) }, RequestMessage = request });
             var response = Content.TryGetValue(uri, out string? html)
                 ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(html, Encoding.UTF8, "text/html") }
                 : new HttpResponseMessage(HttpStatusCode.NotFound);

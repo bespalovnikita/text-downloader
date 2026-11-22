@@ -41,6 +41,19 @@ internal static class BestweaponTests
         Sequence(new[] { Url(8) }, handler.Requests);
     }
 
+    public static async Task TemporaryRedirectAsync()
+    {
+        var original = Url(3);
+        var target = new Uri("https://www.bestweapon.cc" + original.AbsolutePath + "/?view=synthetic");
+        var pages = new Dictionary<Uri, string> { [target] = Pages(3)[original] };
+        using var handler = new PagesHandler(pages) { FirstTemporaryRedirect = target };
+        using var http = new HttpClient(handler);
+        using var source = new BestweaponSource(http, TimeSpan.Zero);
+        var page = await source.GetPageAsync(original, false, CancellationToken.None);
+        Equal(original, page.Url);
+        Sequence(new[] { original, target }, handler.Requests);
+    }
+
     public static async Task OrderedSeriesAsync()
     {
         foreach (int selected in new[] { 8, 7 })
@@ -254,6 +267,7 @@ internal static class BestweaponTests
     {
         public List<Uri> Requests { get; } = [];
         public Uri? Redirect { get; init; }
+        public Uri? FirstTemporaryRedirect { get; init; }
         public bool Hold { get; init; }
         public Action<int>? OnRequest { get; init; }
         public TaskCompletionSource<bool> Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -264,6 +278,8 @@ internal static class BestweaponTests
             OnRequest?.Invoke(Requests.Count);
             token.ThrowIfCancellationRequested();
             if (Hold) await Task.Delay(Timeout.Infinite, token);
+            if (Requests.Count == 1 && FirstTemporaryRedirect is not null)
+                return new HttpResponseMessage(HttpStatusCode.TemporaryRedirect) { RequestMessage = request, Headers = { Location = FirstTemporaryRedirect } };
             if (Redirect is not null)
                 return new HttpResponseMessage(HttpStatusCode.Redirect) { RequestMessage = request, Headers = { Location = Redirect } };
             if (!pages.TryGetValue(uri, out string? html)) throw new InvalidOperationException("Unexpected synthetic HTTP request: " + uri);

@@ -27,6 +27,7 @@ internal static class Program
             ("Stories with arbitrary filename prefixes download every page", FlexibleStoryNames),
             ("Style and genre aliases preserve complete story identity and exact text", PresentationAliases),
             ("HTTP redirects and age forms allow only same-story page aliases", AliasTransportScope),
+            ("Sefan HTTP 307 preserves the location and the age-confirmation POST", TemporaryRedirectAsync),
             ("Scope fallback retries neutral genre once without mixing partial text", NeutralGenreFallback),
             ("Neutral genre fallback preserves adult permission and non-scope failures", FallbackScopeAndPermission),
             ("HTTP page spacing is configurable and cancellable", PageSpacing),
@@ -43,6 +44,7 @@ internal static class Program
             ("Sefan uses a separate contents page and rejects gaps", SefanSeriesTests.SeparateContentsAsync),
             ("Sefan standalone stories skip the no-contents link and retry from saved pages", SefanSeriesTests.NoContentsMarkerAndCachedRetryAsync),
             ("Bestweapon URL scope and current-post-only preview", BestweaponTests.PreviewAsync),
+            ("Bestweapon HTTP 307 preserves an allowed redirect URL", BestweaponTests.TemporaryRedirectAsync),
             ("Bestweapon orders all preceding chapters and excludes future parts", BestweaponTests.OrderedSeriesAsync),
             ("Bestweapon rejects missing, ambiguous and unrelated series parts", BestweaponTests.RejectedChainsAsync),
             ("Bestweapon cache integrity, refresh and cancellation", BestweaponTests.CacheAndCancellationAsync),
@@ -200,6 +202,59 @@ internal static class Program
             await ThrowsAsync(() => source.GetPageAsync(original, true, CancellationToken.None));
             Equal(1, handler.Requests.Count);
             Equal(HttpMethod.Get, handler.Requests[0].Method);
+        }
+    }
+
+    private static async Task TemporaryRedirectAsync()
+    {
+        var alias = new Uri("https://www.sefan.ru" + Source.AbsolutePath + "?flow=synthetic");
+        var action = new Uri(alias, "?age=synthetic");
+        var accepted = new Uri(alias, "?accepted=synthetic");
+        var log = new CaptureLog();
+        const string gate = "<form action='?age=synthetic'><input name='freed' value='1'>" +
+            "<input type='hidden' name='nonce' value='synthetic-token'></form>";
+        using (var handler = new SequenceHandler(
+            new HttpResponseMessage(HttpStatusCode.TemporaryRedirect) { Headers = { Location = alias } },
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(gate) },
+            new HttpResponseMessage(HttpStatusCode.TemporaryRedirect) { Headers = { Location = new Uri("?accepted=synthetic#text", UriKind.Relative) } },
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(PageHtml("Рассказ после подтверждения.", total: 1)) }))
+        using (var http = new HttpClient(handler))
+        using (var source = new SefanSource(http, TimeSpan.Zero, log))
+        {
+            var page = await source.GetPageAsync(Source, true, CancellationToken.None);
+            Equal(Source, page.Url);
+            Sequence(new[] { Source, alias, action, accepted }, handler.RequestUris);
+            Sequence(new[] { HttpMethod.Get, HttpMethod.Get, HttpMethod.Post, HttpMethod.Post }, handler.Requests.Select(request => request.Method));
+            Check(handler.Requests[2].Body.Contains("nonce=synthetic-token"), "The age confirmation form was not posted.");
+            Equal(handler.Requests[2].Body, handler.Requests[3].Body);
+            Check(log.Events.Any(entry => entry.Message.Contains("HTTP 307")), "The HTTP 307 response was not logged.");
+            Check(log.Events.All(entry => !entry.Message.Contains("=synthetic")), "A redirect query appeared in the journal.");
+        }
+
+        using (var handler = new SequenceHandler(new HttpResponseMessage(HttpStatusCode.TemporaryRedirect)))
+        using (var http = new HttpClient(handler))
+        using (var source = new SefanSource(http, TimeSpan.Zero))
+        {
+            try
+            {
+                await source.GetPageAsync(Source, false, CancellationToken.None);
+                throw new Exception("A 307 without Location was accepted.");
+            }
+            catch (InvalidDataException error)
+            {
+                Check(error.Message.Contains("307") && error.Message.Contains("Location"), "The missing Location was not explained.");
+            }
+            Equal(1, handler.Requests.Count);
+        }
+
+        using (var handler = new SequenceHandler(
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(gate) },
+            new HttpResponseMessage(HttpStatusCode.TemporaryRedirect) { Headers = { Location = new Uri("https://example.org" + Source.AbsolutePath) } }))
+        using (var http = new HttpClient(handler))
+        using (var source = new SefanSource(http, TimeSpan.Zero))
+        {
+            await ThrowsAsync<ArgumentException>(() => source.GetPageAsync(Source, true, CancellationToken.None));
+            Equal(2, handler.Requests.Count);
         }
     }
 

@@ -69,20 +69,19 @@ public sealed partial class SefanSource : IStorySource
             var normalized = SameStory(candidate, original);
             if (PageNumber(normalized) != PageNumber(original))
                 throw new InvalidDataException("Сайт перенаправил на другую страницу рассказа.");
-            return normalized;
         }).ConfigureAwait(false);
-        return Parse(document, actual);
+        return Parse(document, Normalize(actual));
     }
 
     private async Task<(HtmlDocument Document, Uri Actual)> GetDocumentAsync(Uri original, bool confirmAdult,
-        CancellationToken cancellationToken, Func<Uri, Uri> validate)
+        CancellationToken cancellationToken, Action<Uri> validate)
     {
         var (html, actual) = await RequestAsync(original, original, null, cancellationToken, validate).ConfigureAwait(false);
         var document = LoadDocument(html);
         if (FindAgeGate(document) is not { } gate) return (document, actual);
         if (!confirmAdult) throw new AgeConfirmationRequiredException();
 
-        var action = validate(new Uri(actual, Attribute(gate, "action", actual.AbsoluteUri)));
+        var action = new Uri(actual, Attribute(gate, "action", actual.AbsoluteUri));
         var fields = gate.Descendants("input")
             .Where(n => Attribute(n, "type").Equals("hidden", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(Attribute(n, "name")))
             .GroupBy(n => Attribute(n, "name"), StringComparer.Ordinal)
@@ -231,15 +230,17 @@ public sealed partial class SefanSource : IStorySource
     }
 
     private async Task<(string Html, Uri Actual)> RequestAsync(Uri uri, Uri original,
-        IReadOnlyDictionary<string, string>? form, CancellationToken cancellationToken, Func<Uri, Uri> validate)
+        IReadOnlyDictionary<string, string>? form, CancellationToken cancellationToken, Action<Uri> validate)
     {
+        validate(uri);
+        var initial = StoryRedirect.ForRequest(uri);
         for (var attempt = 0; attempt <= 2; attempt++)
         {
             try
             {
-                var current = validate(uri);
+                var current = initial;
                 var usePost = form is not null;
-                for (var redirect = 0; redirect <= 5; redirect++)
+                for (var redirect = 0; redirect <= StoryRedirect.Limit; redirect++)
                 {
                     await _requestThrottle.EnterAsync(_requestInterval, cancellationToken).ConfigureAwait(false);
                     try
@@ -251,15 +252,19 @@ public sealed partial class SefanSource : IStorySource
                         if (usePost) request.Content = new FormUrlEncodedContent(form!);
                         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                         timeout.CancelAfter(TimeSpan.FromSeconds(30));
-                        _log?.Report(new(DownloadLogLevel.Detail, $"{request.Method} {current.AbsoluteUri}"));
+                        string logAddress = current.GetLeftPart(UriPartial.Path);
+                        _log?.Report(new(DownloadLogLevel.Detail, $"{request.Method} {logAddress}"));
                         using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
-                        _log?.Report(new(DownloadLogLevel.Detail, $"HTTP {(int)response.StatusCode} · {current.AbsoluteUri}"));
-                        var actual = validate(response.RequestMessage?.RequestUri ?? current);
-                        if ((int)response.StatusCode is 301 or 302 or 303 or 307 or 308)
+                        _log?.Report(new(DownloadLogLevel.Detail, $"HTTP {(int)response.StatusCode} · {logAddress}"));
+                        var actual = response.RequestMessage?.RequestUri ?? current;
+                        validate(actual);
+                        if (StoryRedirect.IsRedirect(response.StatusCode))
                         {
-                            if (redirect == 5 || response.Headers.Location is null) throw new InvalidDataException("Слишком много перенаправлений сайта.");
-                            current = validate(new Uri(actual, response.Headers.Location));
-                            if ((int)response.StatusCode is 301 or 302 or 303) usePost = false;
+                            var target = StoryRedirect.ReadLocation(actual, response, redirect);
+                            validate(target);
+                            current = StoryRedirect.ForRequest(target);
+                            if (response.StatusCode is HttpStatusCode.MovedPermanently or HttpStatusCode.Found or HttpStatusCode.SeeOther)
+                                usePost = false;
                             continue;
                         }
                         if ((int)response.StatusCode is 429 or 500 or 502 or 503 or 504)
