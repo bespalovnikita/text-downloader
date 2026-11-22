@@ -1,0 +1,42 @@
+name: Release main merges
+
+on:
+  push:
+    branches: [main]
+  pull_request_target:
+    branches: [main]
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    if: github.event_name == 'push' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      has_releases: ${{ steps.plan.outputs.has_releases }}
+    steps:
+      # In pull_request_target run only the trusted main branch, including the
+      # now-merged revision. Never check out the pull request's source ref.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'push' && github.sha || 'main' }}
+          fetch-depth: 0
+          persist-credentials: false
+      - id: plan
+        run: python3 scripts/plan-releases.py
+
+  release:
+    if: needs.plan.outputs.has_releases == 'true'
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/windows.yml
+    with:
+      release_commit: ${{ matrix.commit }}
+      release_version: ${{ matrix.version }}

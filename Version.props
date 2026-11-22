@@ -1,6 +1,7 @@
 <Project>
   <PropertyGroup>
     <Version>0.1.7</Version>
+    <ReleaseBaselineCommit>d72712cec2fe2c4c6fce1c8343dd37067231679b</ReleaseBaselineCommit>
     <AssemblyVersion>$(Version).0</AssemblyVersion>
     <FileVersion>$(Version).0</FileVersion>
   </PropertyGroup>
