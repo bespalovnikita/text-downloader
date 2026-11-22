@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Net;
 using System.Text;
@@ -28,6 +29,7 @@ internal static class Program
             ("HTTP redirects and age forms allow only same-story page aliases", AliasTransportScope),
             ("Scope fallback retries neutral genre once without mixing partial text", NeutralGenreFallback),
             ("Neutral genre fallback preserves adult permission and non-scope failures", FallbackScopeAndPermission),
+            ("HTTP page spacing is configurable and cancellable", PageSpacing),
             ("HTML text, navigation, source whitespace and age gate", HtmlParsing),
             ("Age confirmation is sent only after explicit permission", AgeConfirmation),
             ("Complete chain joins words and punctuation without page headings", CompleteStory),
@@ -386,6 +388,26 @@ internal static class Program
         var punctuation = await new StoryDownloader(punctuationSource, System.IO.Path.Combine(folder.Path, "punctuation"))
             .DownloadAsync(Source, false, false, null, CancellationToken.None);
         Sequence(new[] { "Он подумал, затем ответил." }, punctuation.Paragraphs);
+    }
+
+    private static async Task PageSpacing()
+    {
+        string html = PageHtml("Проверка задержки.", total: 1);
+        using var handler = new SequenceHandler(html, html);
+        using var http = new HttpClient(handler);
+        using var source = new SefanSource(http, TimeSpan.FromMilliseconds(100));
+        await source.GetPageAsync(Source, false, CancellationToken.None);
+        long beforeSecond = Stopwatch.GetTimestamp();
+        await source.GetPageAsync(Source, false, CancellationToken.None);
+        Check(Stopwatch.GetElapsedTime(beforeSecond) >= TimeSpan.FromMilliseconds(75), "Second request skipped configured spacing.");
+
+        using var slowHandler = new SequenceHandler(html);
+        using var slowHttp = new HttpClient(slowHandler);
+        using var cancellable = new SefanSource(slowHttp, TimeSpan.FromSeconds(5));
+        await cancellable.GetPageAsync(Source, false, CancellationToken.None);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(25));
+        await ThrowsAsync<OperationCanceledException>(() => cancellable.GetPageAsync(Source, false, cancellation.Token));
+        Equal(1, slowHandler.Requests.Count);
     }
 
     private static async Task AgeConfirmation()

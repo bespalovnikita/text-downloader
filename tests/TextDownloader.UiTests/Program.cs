@@ -46,6 +46,11 @@ internal static class Program
         window.Show();
         await window.Ready.WaitAsync(TimeSpan.FromSeconds(10));
         window.OutputDirectory = Path.Combine(Root, "books");
+        var delayInput = (TextBox)window.FindName("PageDelayInput");
+        delayInput.SetCurrentValue(TextBox.TextProperty, "0,09");
+        Assert(!window.CanStart && window.PageDelayError.Length > 0, "Delay below the minimum was accepted");
+        delayInput.SetCurrentValue(TextBox.TextProperty, "0,1");
+        Assert(window.CanStart && window.PageDelayError.Length == 0, "Minimum delay was rejected");
 
         // Add through the actual routed button, normalising a later page and a duplicate.
         ((TextBox)window.FindName("UrlInput")).Text = "https://sefan.ru/stories/ru/2/drama/fixture_1-2.html\nhttps://sefan.ru/stories/ru/2/drama/fixture_1.html";
@@ -113,6 +118,7 @@ internal static class Program
         await restored.Ready.WaitAsync(TimeSpan.FromSeconds(10));
         Assert(restored.Items.Count == 4 && restored.History.Count == 2, "Queue/history did not restore");
         Assert(!restored.IsBusy && restored.Items[3].Status == QueueStatus.Queued, "Restore started a download");
+        Assert(decimal.Parse(restored.PageDelayText, System.Globalization.CultureInfo.CurrentCulture) == 0.1m, "Delay did not restore");
         Assert(restored.OutputDirectory == Path.Combine(Root, "books") && restored.ConfirmAdult, "Settings did not restore");
 
         // A cached export can beat a slow preview request. Completion must cancel

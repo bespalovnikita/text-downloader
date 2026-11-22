@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Text;
@@ -13,8 +12,8 @@ public sealed class SefanSource : IStorySource
     private const int MaxResponseBytes = 4 * 1024 * 1024;
     private readonly HttpClient _client;
     private readonly bool _ownsClient;
-    private readonly SemaphoreSlim _requestGate = new(1, 1);
-    private long? _lastRequest;
+    private readonly TimeSpan _requestInterval;
+    private readonly PageRequestThrottle _requestThrottle;
     private static readonly Regex PathPattern = new(
         @"^(?<directory>/stories/(?<language>[a-z]{2})/\d+/(?<genre>[^/]+)/)(?<slug>[^/]+?)_(?<part>\d+)(?:-(?<page>\d+))?\.html$",
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
@@ -25,8 +24,15 @@ public sealed class SefanSource : IStorySource
 
     static SefanSource() => Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
-    public SefanSource(HttpClient? client = null)
+    public SefanSource(HttpClient? client = null, TimeSpan? requestInterval = null)
+        : this(client, requestInterval ?? TimeSpan.FromSeconds(1), new PageRequestThrottle()) { }
+
+    internal SefanSource(HttpClient? client, TimeSpan requestInterval, PageRequestThrottle requestThrottle)
     {
+        if (requestInterval < TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(requestInterval));
+        _requestInterval = requestInterval;
+        _requestThrottle = requestThrottle;
         _ownsClient = client is null;
         _client = client ?? new HttpClient(new HttpClientHandler
         {
@@ -210,15 +216,9 @@ public sealed class SefanSource : IStorySource
                 var usePost = form is not null;
                 for (var redirect = 0; redirect <= 5; redirect++)
                 {
-                    await _requestGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    await _requestThrottle.EnterAsync(_requestInterval, cancellationToken).ConfigureAwait(false);
                     try
                     {
-                        if (_lastRequest is { } last)
-                        {
-                            var delay = TimeSpan.FromSeconds(1) - Stopwatch.GetElapsedTime(last);
-                            if (delay > TimeSpan.Zero) await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
-                        }
-                        _lastRequest = Stopwatch.GetTimestamp();
                         using var request = new HttpRequestMessage(usePost ? HttpMethod.Post : HttpMethod.Get, current);
                         request.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (compatible; TextDownloader/0.1)");
                         request.Headers.Referrer = original;
@@ -260,7 +260,7 @@ public sealed class SefanSource : IStorySource
                         if (string.IsNullOrWhiteSpace(html)) throw new HttpRequestException("Сайт вернул пустую страницу.");
                         return (html, actual);
                     }
-                    finally { _requestGate.Release(); }
+                    finally { _requestThrottle.Exit(); }
                 }
                 throw new InvalidDataException("Не удалось завершить перенаправления сайта.");
             }
@@ -300,6 +300,5 @@ public sealed class SefanSource : IStorySource
     public void Dispose()
     {
         if (_ownsClient) _client.Dispose();
-        _requestGate.Dispose();
     }
 }

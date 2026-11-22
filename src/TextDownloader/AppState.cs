@@ -57,6 +57,10 @@ public sealed class Settings
     public BookFormat Format { get; set; } = BookFormat.Both;
     public bool ConfirmAdult { get; set; }
     public bool RefreshCache { get; set; }
+    public const decimal MinimumPageDelaySeconds = 0.1m;
+    public const decimal MaximumPageDelaySeconds = (decimal)long.MaxValue / TimeSpan.TicksPerSecond;
+    public decimal PageDelaySeconds { get; set; } = 1m;
+    public TimeSpan GetPageDelay() => TimeSpan.FromTicks((long)(PageDelaySeconds * TimeSpan.TicksPerSecond));
     public bool MinimizeToTray { get; set; } = true;
     public double QueueWidth { get; set; } = 350;
     public double PreviewWidth { get; set; } = 350;
@@ -95,6 +99,8 @@ public sealed class AppStore
                 state.Queue.Any(q => q is null || !Uri.TryCreate(q.Url, UriKind.Absolute, out _) || q.Files is null || !Enum.IsDefined(q.Status)) ||
                 state.History.Any(h => h is null || h.Files is null))
                 throw new InvalidDataException("Сохранение содержит недопустимые значения.");
+            if (state.Settings.PageDelaySeconds is < Settings.MinimumPageDelaySeconds or > Settings.MaximumPageDelaySeconds)
+                state.Settings.PageDelaySeconds = 1m;
             foreach (var item in state.Queue.Where(q => q.Status == QueueStatus.Running))
             {
                 item.Status = QueueStatus.Paused;

@@ -12,6 +12,15 @@ public sealed class SupportedStorySource : IBookStorySource
         _bestweapon = bestweapon ?? new BestweaponSource();
     }
 
+    /// <summary>Creates sources that share request spacing per site across previews and downloads.</summary>
+    public static Func<TimeSpan, IStorySource> CreateFactory()
+    {
+        var sefanThrottle = new PageRequestThrottle();
+        var bestweaponThrottle = new PageRequestThrottle();
+        return interval => new SupportedStorySource(new SefanSource(null, interval, sefanThrottle),
+            new BestweaponSource(null, interval, bestweaponThrottle));
+    }
+
     public bool CanHandle(Uri uri) => _sefan.CanHandle(uri) || _bestweapon.CanHandle(uri);
     public Uri NormalizeToFirstPage(Uri uri) => SourceFor(uri).NormalizeToFirstPage(uri);
     public Task<StoryPage> GetPageAsync(Uri uri, bool confirmAdult, CancellationToken cancellationToken) =>

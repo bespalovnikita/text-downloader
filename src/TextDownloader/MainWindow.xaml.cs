@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -24,7 +25,7 @@ namespace TextDownloader;
 public partial class MainWindow : Window, INotifyPropertyChanged
 {
     private readonly AppStore _store;
-    private readonly Func<IStorySource> _sourceFactory;
+    private readonly Func<TimeSpan, IStorySource> _sourceFactory;
     private readonly bool _enableTray;
     private readonly IAppUpdateClient _updateClient;
     private readonly bool _ownsUpdateClient;
@@ -81,7 +82,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Changed(nameof(CanReceiveInput)); Changed(nameof(CanOpenUpdates));
         }
     }
-    public bool CanStart => _initialized && !IsBusy && !IsUpdating && !_closing && _store.CanWrite && !_saveFailed;
+    public bool CanStart => _initialized && _validPageDelay && !IsBusy && !IsUpdating && !_closing && _store.CanWrite && !_saveFailed;
     public bool CanEditSettings => !IsBusy && !IsUpdating && !_closing;
     public bool CanReceiveInput => _initialized && !IsUpdating && !_closing;
     public bool CanOpenUpdates => _initialized && !IsUpdating && !_closing;
@@ -92,6 +93,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool ConfirmAdult { get => _settings.ConfirmAdult; set { if (IsUpdating) return; _settings.ConfirmAdult = value; Changed(); ScheduleSave(); } }
     public bool RefreshCache { get => _settings.RefreshCache; set { if (IsUpdating) return; _settings.RefreshCache = value; Changed(); ScheduleSave(); } }
     public bool MinimizeToTray { get => _settings.MinimizeToTray; set { if (IsUpdating) return; _settings.MinimizeToTray = value; Changed(); ScheduleSave(); } }
+    private string _pageDelayText = "1";
+    private bool _validPageDelay = true;
+    public string PageDelayText
+    {
+        get => _pageDelayText;
+        set
+        {
+            if (IsUpdating || !Set(ref _pageDelayText, value)) return;
+            _validPageDelay = decimal.TryParse(value.Trim().Replace(',', '.'), NumberStyles.AllowDecimalPoint,
+                CultureInfo.InvariantCulture, out decimal seconds) &&
+                seconds is >= Settings.MinimumPageDelaySeconds and <= Settings.MaximumPageDelaySeconds;
+            if (_validPageDelay)
+            {
+                _settings.PageDelaySeconds = seconds;
+                ScheduleSave();
+            }
+            Changed(nameof(PageDelayError));
+            Changed(nameof(CanStart));
+        }
+    }
+    public string PageDelayError => _validPageDelay ? "" : "Введите задержку в секундах, от 0,1.";
     private string _currentStatus = "Добавьте ссылку на рассказ Sefan или публикацию Bestweapon.";
     public string CurrentStatus { get => _currentStatus; private set => Set(ref _currentStatus, value); }
     private string _previewTitle = "Выберите рассказ";
@@ -109,7 +131,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         IAppUpdateClient? updateClient = null, string? updateTargetDirectory = null)
     {
         _store = new AppStore(profileDirectory);
-        _sourceFactory = sourceFactory ?? (() => new SupportedStorySource());
+        _sourceFactory = sourceFactory is null ? SupportedStorySource.CreateFactory() : _ => sourceFactory();
         _enableTray = enableTray;
         _ownsUpdateClient = updateClient is null;
         _updateClient = updateClient ?? new UpdateClient();
@@ -128,6 +150,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             StateSnapshot saved = await Task.Run(_store.LoadAsync);
             _settings = saved.Settings;
+            _pageDelayText = _settings.PageDelaySeconds.ToString(CultureInfo.CurrentCulture);
+            _validPageDelay = true;
+            Changed(nameof(PageDelayText));
+            Changed(nameof(PageDelayError));
             foreach (QueueItem item in saved.Queue) Attach(item);
             foreach (HistoryEntry entry in saved.History) History.Add(entry);
             QueueColumn.Width = new GridLength(Clamp(_settings.QueueWidth, 250, Math.Max(250, ActualWidth * .35)));
@@ -172,7 +198,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (Items.Count + candidates.Length > 10000) { CurrentStatus = "Очередь ограничена 10 000 ссылками."; return; }
         int added = 0, rejected = 0;
         QueueItem? first = null;
-        using IStorySource source = _sourceFactory();
+        TimeSpan pageDelay = _settings.GetPageDelay();
+        using IStorySource source = _sourceFactory(pageDelay);
         foreach (string candidate in candidates)
         {
             try
@@ -212,11 +239,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         PreviewStatus = item is null ? "" : "Получаем сведения…";
         if (item is null) return;
         bool confirmAdult = ConfirmAdult;
+        TimeSpan pageDelay = _settings.GetPageDelay();
         try
         {
             StoryPage page = await Task.Run(async () =>
             {
-                using IStorySource source = _sourceFactory();
+                using IStorySource source = _sourceFactory(pageDelay);
                 var downloader = new StoryDownloader(source, _store.CacheDirectory);
                 return await downloader.PreviewAsync(new Uri(item.Url), confirmAdult, token);
             }, token);
@@ -255,12 +283,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _sessionStop?.Dispose();
         _sessionStop = new CancellationTokenSource();
         IsBusy = true;
-        _sessionTask = RunSessionAsync(pending, Path.GetFullPath(OutputDirectory), Format, ConfirmAdult, RefreshCache, _sessionStop.Token);
+        _sessionTask = RunSessionAsync(pending, Path.GetFullPath(OutputDirectory), Format, ConfirmAdult, RefreshCache, _settings.GetPageDelay(), _sessionStop.Token);
         await _sessionTask;
         CurrentUpdateWindow?.RefreshInstallEligibility();
     }
 
-    private async Task RunSessionAsync(QueueItem[] pending, string directory, BookFormat format, bool confirmAdult, bool refresh, CancellationToken token)
+    private async Task RunSessionAsync(QueueItem[] pending, string directory, BookFormat format, bool confirmAdult, bool refresh, TimeSpan pageDelay, CancellationToken token)
     {
         string? sessionError = null;
         try
@@ -288,7 +316,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     await SaveOrThrowAsync();
                     var result = await Task.Run(async () =>
                     {
-                        using IStorySource source = _sourceFactory();
+                        using IStorySource source = _sourceFactory(pageDelay);
                         var downloader = new StoryDownloader(source, _store.CacheDirectory);
                         BookDocument book = await downloader.DownloadAsync(new Uri(item.Url), confirmAdult, refresh, progress, token);
                         token.ThrowIfCancellationRequested();
