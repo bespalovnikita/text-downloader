@@ -40,6 +40,7 @@ internal static class Program
             ("Preview does not download the entire story", Preview),
             ("Sefan selector collects earlier and later chapters and resumes within a chapter", SefanSeriesTests.InlineContentsAndResumeAsync),
             ("Sefan uses a separate contents page and rejects gaps", SefanSeriesTests.SeparateContentsAsync),
+            ("Sefan standalone stories skip the no-contents link and retry from saved pages", SefanSeriesTests.NoContentsMarkerAndCachedRetryAsync),
             ("Bestweapon URL scope and current-post-only preview", BestweaponTests.PreviewAsync),
             ("Bestweapon orders all preceding chapters and excludes future parts", BestweaponTests.OrderedSeriesAsync),
             ("Bestweapon rejects missing, ambiguous and unrelated series parts", BestweaponTests.RejectedChainsAsync),
