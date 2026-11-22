@@ -1,0 +1,54 @@
+name: Save main merge branches
+
+on:
+  push:
+    branches: [main]
+  pull_request_target:
+    branches: [main]
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    if: github.event_name == 'push' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        if: github.event_name == 'push'
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Create a branch for each merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE: ${{ github.event.before }}
+          MERGED_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == pull_request_target ]]; then
+            commits=$MERGED_SHA
+          elif [[ "$BEFORE" == 0000000000000000000000000000000000000000 ]]; then
+            commits=$(git rev-list --no-walk --merges "$GITHUB_SHA")
+          else
+            commits=$(git rev-list --first-parent --merges "$BEFORE..$GITHUB_SHA")
+          fi
+
+          for commit in $commits; do
+            [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
+            branch="heads/merge-snapshots/$commit"
+            check="repos/$GITHUB_REPOSITORY/git/ref/$branch"
+            if [[ "$(gh api "$check" --jq .object.sha 2>/dev/null || true)" == "$commit" ]]; then
+              continue
+            fi
+            if ! gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f "ref=refs/$branch" -f "sha=$commit" --silent; then
+              # The push and merged-PR workflows can race to create the same ref.
+              [[ "$(gh api "$check" --jq .object.sha)" == "$commit" ]]
+            fi
+            printf 'Saved %s at %s\n' "$branch" "$commit"
+          done
