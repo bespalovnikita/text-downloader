@@ -19,6 +19,11 @@ internal static class StoryRedirect
         return target;
     }
 
+    public static string DescribeLocation(Uri target) =>
+        target.Scheme is "http" or "https"
+            ? target.GetComponents(UriComponents.SchemeAndServer | UriComponents.Path, UriFormat.UriEscaped)
+            : target.Scheme + ":";
+
     // Call after checking the source's URL scope. Keep server-supplied path and
     // query for transport while retaining HTTPS on the default port.
     public static Uri ForRequest(Uri verified) =>

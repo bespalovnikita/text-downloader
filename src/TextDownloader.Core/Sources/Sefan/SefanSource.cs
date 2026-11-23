@@ -291,7 +291,15 @@ public sealed partial class SefanSource : IStorySource, IPagedBookSource
                         if (StoryRedirect.IsRedirect(response.StatusCode))
                         {
                             var target = StoryRedirect.ReadLocation(actual, response, redirect);
-                            validate(target);
+                            string location = StoryRedirect.DescribeLocation(target);
+                            _log?.Report(new(DownloadLogLevel.Detail, $"HTTP {(int)response.StatusCode} · Location: {location}"));
+                            try { validate(target); }
+                            catch (ArgumentException error)
+                            {
+                                throw new InvalidDataException(
+                                    $"HTTP {(int)response.StatusCode}. Sefan перенаправил на {location}. " +
+                                    "Этот адрес не является поддерживаемой страницей чтения или оглавления.", error);
+                            }
                             current = StoryRedirect.ForRequest(target);
                             if (response.StatusCode is HttpStatusCode.MovedPermanently or HttpStatusCode.Found or HttpStatusCode.SeeOther)
                                 usePost = false;
