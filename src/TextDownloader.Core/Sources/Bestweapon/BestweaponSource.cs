@@ -395,6 +395,8 @@ public sealed class BestweaponSource : IBookStorySource
                         if (StoryRedirect.IsRedirect(response.StatusCode))
                         {
                             var target = StoryRedirect.ReadLocation(actual, response, redirect);
+                            _log?.Report(new(DownloadLogLevel.Detail,
+                                $"HTTP {(int)response.StatusCode} · Location: {StoryRedirect.DescribeLocation(target)}"));
                             if (Normalize(target) != requested) throw new InvalidDataException("Bestweapon перенаправил на другую публикацию.");
                             current = StoryRedirect.ForRequest(target);
                             continue;

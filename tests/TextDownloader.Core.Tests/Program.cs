@@ -28,6 +28,7 @@ internal static class Program
             ("Style and genre aliases preserve complete story identity and exact text", PresentationAliases),
             ("HTTP redirects and age forms allow only same-story page aliases", AliasTransportScope),
             ("Sefan HTTP 307 preserves the location and the age-confirmation POST", TemporaryRedirectAsync),
+            ("A non-reading redirect leaves the verified prefix reusable", RedirectOutsideReadingAsync),
             ("Scope fallback retries neutral genre once without mixing partial text", NeutralGenreFallback),
             ("Neutral genre fallback preserves adult permission and non-scope failures", FallbackScopeAndPermission),
             ("HTTP page spacing is configurable and cancellable", PageSpacing),
@@ -254,9 +255,59 @@ internal static class Program
         using (var http = new HttpClient(handler))
         using (var source = new SefanSource(http, TimeSpan.Zero))
         {
-            await ThrowsAsync<ArgumentException>(() => source.GetPageAsync(Source, true, CancellationToken.None));
+            await ThrowsAsync<InvalidDataException>(() => source.GetPageAsync(Source, true, CancellationToken.None));
             Equal(2, handler.Requests.Count);
         }
+    }
+
+    private static async Task RedirectOutsideReadingAsync()
+    {
+        using var folder = new TemporaryDirectory();
+        var log = new CaptureLog();
+        const int total = 21;
+        var responses = Enumerable.Range(1, total - 1).Select(number =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(PageHtml($"Тестовая страница {number}.<br>", next: number + 1, total: total))
+            }).Append(new HttpResponseMessage(HttpStatusCode.TemporaryRedirect)
+            {
+                Headers = { Location = new Uri("/notice.html?nonce=synthetic-private", UriKind.Relative) }
+            }).ToArray();
+
+        DownloadCheckpoint? checkpoint = null;
+        using (var handler = new SequenceHandler(responses))
+        using (var http = new HttpClient(handler))
+        using (var source = new SefanSource(http, TimeSpan.Zero, log))
+        {
+            var downloader = new StoryDownloader(source, folder.Path);
+            try
+            {
+                await downloader.DownloadAsync(Source, false, false,
+                    new InlineProgress(progress => checkpoint = progress.Checkpoint ?? checkpoint), CancellationToken.None);
+                throw new Exception("A non-reading redirect produced a book.");
+            }
+            catch (InvalidDataException error)
+            {
+                Check(error.Message.Contains("HTTP 307") && error.Message.Contains("https://sefan.ru/notice.html"),
+                    "The failure did not report the redirect destination.");
+                Check(!error.Message.Contains("synthetic-private"), "The redirect parameter appeared in the error.");
+            }
+            Sequence(Enumerable.Range(1, total).Select(PageUrl), handler.RequestUris);
+            Equal(PageUrl(20), checkpoint?.LastSuccessfulPageUrl);
+            Equal(PageUrl(21), checkpoint?.PendingPageUrl);
+            Check(log.Events.Any(entry => entry.Message.Contains("Location: https://sefan.ru/notice.html")),
+                "The refused redirect did not record its Location.");
+            Check(log.Events.All(entry => !entry.Message.Contains("synthetic-private")),
+                "The redirect parameter appeared in the journal.");
+        }
+
+        using var retryHandler = new SequenceHandler(PageHtml("Тестовая страница 21.", total: total));
+        using var retryHttp = new HttpClient(retryHandler);
+        using var retrySource = new SefanSource(retryHttp, TimeSpan.Zero);
+        var result = await new StoryDownloader(retrySource, folder.Path).DownloadAsync(Source, false, false, null,
+            CancellationToken.None, new DownloadRecovery(checkpoint, null));
+        Sequence(new[] { PageUrl(21) }, retryHandler.RequestUris);
+        Equal(total, result.PageCount);
     }
 
     private static async Task NeutralGenreFallback()
