@@ -13,6 +13,7 @@ public interface IStorySource : IDisposable
 
     bool CanRecover(Uri uri) => CanHandle(uri);
     bool CanImportSavedPage(Uri uri) => false;
+    bool CanReadInBrowser(Uri uri) => false;
 
     Task<StoryPage> ReadSavedPageAsync(Uri expected, Stream html, CancellationToken token) =>
         throw new NotSupportedException("Загрузка из HTML для этого адреса недоступна.");

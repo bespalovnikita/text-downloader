@@ -19,7 +19,7 @@
   <Grid Grid.Row="0" Margin="0,0,0,12">
    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
    <StackPanel><TextBlock Text="Text Downloader" FontSize="25" FontWeight="SemiBold"/><TextBlock Text="Сохранение произведений из интернета в EPUB и FB2" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0"/></StackPanel>
-   <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"><Button x:Name="HistoryButton" Content="История…" Click="OnHistory"/><Button x:Name="UpdateButton" Content="Обновления…" Click="OnUpdate" IsEnabled="{Binding CanOpenUpdates}"/></StackPanel>
+   <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"><Button x:Name="AuthorizationButton" Content="Авторизация сайтов…" Click="OnSiteAuthorization" IsEnabled="{Binding CanEditSettings}"/><Button x:Name="HistoryButton" Content="История…" Click="OnHistory"/><Button x:Name="UpdateButton" Content="Обновления…" Click="OnUpdate" IsEnabled="{Binding CanOpenUpdates}"/></StackPanel>
   </Grid>
   <Grid Grid.Row="1" Margin="0,0,0,14">
    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -94,7 +94,7 @@
        <Button x:Name="BrowserRecoveryButton" Content="Продолжить через браузер" Click="OnBrowserRecovery" IsEnabled="{Binding CanStart}">
         <Button.Style>
          <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-          <Style.Triggers><DataTrigger Binding="{Binding CanImportRecoveryPage}" Value="False"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers>
+          <Style.Triggers><DataTrigger Binding="{Binding CanRecoverInBrowser}" Value="False"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers>
          </Style>
         </Button.Style>
        </Button>

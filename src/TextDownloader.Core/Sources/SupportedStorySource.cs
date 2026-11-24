@@ -19,31 +19,24 @@ public sealed class SupportedStorySource : IBookStorySource
     public static Func<TimeSpan, IProgress<DownloadLogEvent>?, IStorySource> CreateLoggedFactory()
     {
         var create = CreateSessionFactory();
-        return (interval, log) => create(interval, log, null);
+        return (interval, log) => create(interval, log, null, null);
     }
 
-    public static Func<TimeSpan, IProgress<DownloadLogEvent>?, BrowserPageReader?, IStorySource> CreateSessionFactory()
+    public static Func<TimeSpan, IProgress<DownloadLogEvent>?, IReadingBrowser?, SiteAuthorization?, IStorySource> CreateSessionFactory()
     {
         // Register new sources here. Each source retains its own request interval state
         // across its previews and downloads.
-        Func<TimeSpan, IProgress<DownloadLogEvent>?, BrowserPageReader?, IStorySource>[] entries =
-        [
-            WithThrottle((interval, throttle, log, browser) => new SefanSource(null, interval, throttle, log, browser)),
-            WithThrottle((interval, throttle, log, _) => new BestweaponSource(null, interval, throttle, log)),
-        ];
-        return (interval, log, browser) => new SupportedStorySource(entries.Select(create => create(interval, log, browser)));
-    }
-
-    private static Func<TimeSpan, IProgress<DownloadLogEvent>?, BrowserPageReader?, IStorySource> WithThrottle(
-        Func<TimeSpan, PageRequestThrottle, IProgress<DownloadLogEvent>?, BrowserPageReader?, IStorySource> create)
-    {
-        var throttle = new PageRequestThrottle();
-        return (interval, log, browser) => create(interval, throttle, log, browser);
+        var sefanThrottle = new PageRequestThrottle();
+        var bestweaponThrottle = new PageRequestThrottle();
+        return (interval, log, browser, rule) => new SupportedStorySource(
+            [new SefanSource(null, interval, sefanThrottle, log, browser, rule),
+             new BestweaponSource(null, interval, bestweaponThrottle, log, browser, rule)]);
     }
 
     public bool CanHandle(Uri uri) => _sources.Any(source => source.CanHandle(uri));
     public bool CanRecover(Uri uri) => _sources.Any(source => source.CanRecover(uri));
     public bool CanImportSavedPage(Uri uri) => _sources.Any(source => source.CanImportSavedPage(uri));
+    public bool CanReadInBrowser(Uri uri) => _sources.Any(source => source.CanReadInBrowser(uri));
     public Uri NormalizeToFirstPage(Uri uri) => SourceFor(uri).NormalizeToFirstPage(uri);
     public int? GetPageNumber(Uri uri) => SourceFor(uri).GetPageNumber(uri);
     public Uri ValidatePageRoute(Uri first, Uri candidate, int? expectedNumber) =>

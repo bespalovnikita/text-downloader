@@ -24,6 +24,7 @@ public sealed class BestweaponSource : IBookStorySource
     private readonly TimeSpan _requestInterval;
     private readonly PageRequestThrottle _requestThrottle;
     private readonly IProgress<DownloadLogEvent>? _log;
+    private readonly IReadingBrowser? _browser;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private static readonly Regex PostPath = new(@"^/post_(?<id>[1-9][0-9]*)/?$", RegexOptions.CultureInvariant | RegexOptions.Compiled);
     private static readonly Regex NumberedTitle = new(
@@ -38,22 +39,19 @@ public sealed class BestweaponSource : IBookStorySource
 
     public BestweaponSource(HttpClient? client = null, TimeSpan? requestInterval = null,
         IProgress<DownloadLogEvent>? log = null)
-        : this(client, requestInterval ?? TimeSpan.FromSeconds(1), new PageRequestThrottle(), log) { }
+        : this(client, requestInterval ?? TimeSpan.FromSeconds(1), new PageRequestThrottle(), log, null, null) { }
 
     internal BestweaponSource(HttpClient? client, TimeSpan requestInterval, PageRequestThrottle requestThrottle,
-        IProgress<DownloadLogEvent>? log)
+        IProgress<DownloadLogEvent>? log, IReadingBrowser? browser, SiteAuthorization? rule)
     {
         if (requestInterval < TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(requestInterval));
         _requestInterval = requestInterval;
         _requestThrottle = requestThrottle;
         _log = log;
+        _browser = browser;
         _ownsClient = client is null;
-        _client = client ?? new HttpClient(new HttpClientHandler
-        {
-            AllowAutoRedirect = false,
-            AutomaticDecompression = DecompressionMethods.All,
-        }) { Timeout = TimeSpan.FromSeconds(30) };
+        _client = client ?? StoryHttpAuthorization.CreateClient(rule);
     }
 
     public bool CanHandle(Uri uri)
@@ -64,6 +62,7 @@ public sealed class BestweaponSource : IBookStorySource
 
     // Finding earlier parts requires the actual post's authoritative TOC and is asynchronous.
     public Uri NormalizeToFirstPage(Uri uri) => Normalize(uri);
+    public bool CanReadInBrowser(Uri uri) => CanHandle(uri);
 
     public StorySourceInfo Describe(Uri uri) => new("Bestweapon", "частей");
     public string DescribePreview(StoryPage page) => "Выбранная публикация и предыдущие части цикла будут собраны в одну книгу.";
@@ -79,7 +78,7 @@ public sealed class BestweaponSource : IBookStorySource
     {
         // This source never submits login or age forms, regardless of the Sefan-specific option.
         uri = Normalize(uri);
-        var post = ParsePost(await ReadHtmlAsync(uri, cancellationToken).ConfigureAwait(false), uri);
+        var post = await ReadPostAsync(uri, cancellationToken).ConfigureAwait(false);
         return new StoryPage(post.Url, post.PartNumber, post.Title, post.Author,
             string.Join("\n\n", post.Paragraphs), null, post.Parts.Count > 0 ? post.Parts.Count : null);
     }
@@ -302,7 +301,7 @@ public sealed class BestweaponSource : IBookStorySource
                 catch (InvalidDataException) { }
             }
         }
-        var post = ParsePost(await ReadHtmlAsync(url, token).ConfigureAwait(false), url);
+        var post = await ReadPostAsync(url, token).ConfigureAwait(false);
         validate(post);
         await WriteCacheAsync(path, post, token).ConfigureAwait(false);
         return post;
@@ -366,6 +365,25 @@ public sealed class BestweaponSource : IBookStorySource
         if (story && node.Name is "br" or "hr") return "\n";
         string inside = string.Concat(node.ChildNodes.Select(n => Render(n, story, depth + 1)));
         return story && BlockTags.Contains(node.Name) ? "\n" + inside + "\n" : inside;
+    }
+
+    private async Task<BestweaponPost> ReadPostAsync(Uri requested, CancellationToken token)
+    {
+        if (_browser is null)
+            return ParsePost(await ReadHtmlAsync(requested, token).ConfigureAwait(false), requested);
+
+        await _requestThrottle.EnterAsync(_requestInterval, token).ConfigureAwait(false);
+        try
+        {
+            _log?.Report(new(DownloadLogLevel.Detail, $"Браузер · {requested}"));
+            return await _browser.ReadPageAsync(requested, (address, html) =>
+            {
+                if (Normalize(address) != requested)
+                    throw new InvalidDataException("Браузер открыл другую публикацию.");
+                return ParsePost(html, requested);
+            }, token).ConfigureAwait(false);
+        }
+        finally { _requestThrottle.Exit(); }
     }
 
     private async Task<string> ReadHtmlAsync(Uri requested, CancellationToken token)

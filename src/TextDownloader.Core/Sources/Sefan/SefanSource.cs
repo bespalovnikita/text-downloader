@@ -15,7 +15,7 @@ public sealed partial class SefanSource : IStorySource, IPagedBookSource
     private readonly TimeSpan _requestInterval;
     private readonly PageRequestThrottle _requestThrottle;
     private readonly IProgress<DownloadLogEvent>? _log;
-    private readonly BrowserPageReader? _browser;
+    private readonly IReadingBrowser? _browser;
     private static readonly Regex PathPattern = new(
         @"^(?<directory>/stories/(?<language>[a-z]{2})/\d+/(?<genre>[^/]+)/)(?<slug>[^/]+?)_(?<part>\d+)(?:-(?<page>\d+))?\.html$",
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
@@ -27,11 +27,11 @@ public sealed partial class SefanSource : IStorySource, IPagedBookSource
     static SefanSource() => Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
     public SefanSource(HttpClient? client = null, TimeSpan? requestInterval = null,
-        IProgress<DownloadLogEvent>? log = null, BrowserPageReader? browser = null)
-        : this(client, requestInterval ?? TimeSpan.FromSeconds(1), new PageRequestThrottle(), log, browser) { }
+        IProgress<DownloadLogEvent>? log = null, IReadingBrowser? browser = null, SiteAuthorization? rule = null)
+        : this(client, requestInterval ?? TimeSpan.FromSeconds(1), new PageRequestThrottle(), log, browser, rule) { }
 
     internal SefanSource(HttpClient? client, TimeSpan requestInterval, PageRequestThrottle requestThrottle,
-        IProgress<DownloadLogEvent>? log, BrowserPageReader? browser)
+        IProgress<DownloadLogEvent>? log, IReadingBrowser? browser, SiteAuthorization? rule)
     {
         if (requestInterval < TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(requestInterval));
@@ -40,13 +40,7 @@ public sealed partial class SefanSource : IStorySource, IPagedBookSource
         _log = log;
         _browser = browser;
         _ownsClient = client is null;
-        _client = client ?? new HttpClient(new HttpClientHandler
-        {
-            AllowAutoRedirect = false,
-            UseCookies = true,
-            CookieContainer = new CookieContainer(),
-            AutomaticDecompression = DecompressionMethods.All,
-        }) { Timeout = TimeSpan.FromSeconds(30) };
+        _client = client ?? StoryHttpAuthorization.CreateClient(rule);
     }
 
     public bool CanHandle(Uri uri)
@@ -77,6 +71,7 @@ public sealed partial class SefanSource : IStorySource, IPagedBookSource
     }
 
     public bool CanImportSavedPage(Uri uri) => CanHandle(uri);
+    public bool CanReadInBrowser(Uri uri) => CanHandle(uri);
 
     public async Task<StoryPage> ReadSavedPageAsync(Uri expected, Stream html, CancellationToken token)
     {
@@ -128,21 +123,24 @@ public sealed partial class SefanSource : IStorySource, IPagedBookSource
                 throw new InvalidDataException("Сайт перенаправил на другую страницу рассказа.");
         }
         if (_browser is not null)
-        {
-            await _requestThrottle.EnterAsync(_requestInterval, cancellationToken).ConfigureAwait(false);
-            try
+            return await ReadInBrowserAsync(original, (address, html) =>
             {
-                _log?.Report(new(DownloadLogLevel.Detail, $"Браузер · {original}"));
-                return await _browser(original, (address, html) =>
-                {
-                    ValidateAddress(address);
-                    return ParseSavedPage(html, original);
-                }, cancellationToken).ConfigureAwait(false);
-            }
-            finally { _requestThrottle.Exit(); }
-        }
+                ValidateAddress(address);
+                return ParseSavedPage(html, original);
+            }, cancellationToken).ConfigureAwait(false);
         var (document, actual) = await GetDocumentAsync(original, confirmAdult, cancellationToken, ValidateAddress).ConfigureAwait(false);
         return Parse(document, Normalize(actual));
+    }
+
+    private async Task<T> ReadInBrowserAsync<T>(Uri url, Func<Uri, string, T> read, CancellationToken token) where T : class
+    {
+        await _requestThrottle.EnterAsync(_requestInterval, token).ConfigureAwait(false);
+        try
+        {
+            _log?.Report(new(DownloadLogLevel.Detail, $"Браузер · {url}"));
+            return await _browser!.ReadPageAsync(url, read, token).ConfigureAwait(false);
+        }
+        finally { _requestThrottle.Exit(); }
     }
 
     private async Task<(HtmlDocument Document, Uri Actual)> GetDocumentAsync(Uri original, bool confirmAdult,

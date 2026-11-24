@@ -78,9 +78,21 @@ public sealed partial class SefanSource
         bool confirmAdult, CancellationToken token)
     {
         var original = ValidateIndexReplacement(index, index);
+        if (_browser is not null)
+            return await ReadInBrowserAsync(original, (actual, html) =>
+            {
+                var verified = ValidateIndexReplacement(original, actual);
+                var parsed = LoadDocument(html);
+                if (FindAgeGate(parsed) is not null) throw new AgeConfirmationRequiredException();
+                return ParseContents(parsed, verified, selected);
+            }, token).ConfigureAwait(false);
         var (document, actual) = await GetDocumentAsync(original, confirmAdult, token,
             candidate => ValidateIndexReplacement(original, candidate)).ConfigureAwait(false);
+        return ParseContents(document, actual, selected);
+    }
 
+    private static IReadOnlyList<SefanContentsEntry> ParseContents(HtmlDocument document, Uri actual, StoryPage selected)
+    {
         // Sefan's own contents page can lay out numbered chapters as
         // sibling divs under #top. Breadcrumb and story excerpt links have no number marker.
         var numberedLinks = document.GetElementbyId("top")?.Elements("div")
