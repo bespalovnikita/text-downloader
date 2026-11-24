@@ -27,6 +27,12 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+## Microsoft Edge WebView2 SDK 1.0.3124.44
+
+Встроенное окно браузера использует Microsoft Edge WebView2.
+Лицензия и уведомления SDK включены в `third-party/WEBVIEW2-LICENSE.txt`
+и `third-party/WEBVIEW2-NOTICE.txt`.
+
 ## .NET 8 / Windows Desktop
 
 Самостоятельная Windows-сборка включает Microsoft .NET Runtime / Windows Desktop.

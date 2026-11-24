@@ -30,6 +30,7 @@ internal static class Program
             ("Sefan HTTP 307 preserves the location and the age-confirmation POST", TemporaryRedirectAsync),
             ("A non-reading redirect leaves the verified prefix reusable", RedirectOutsideReadingAsync),
             ("Saved browser HTML fills a redirected page and resumes with the next page", ImportSavedPageAsync),
+            ("Browser recovery reuses the saved prefix and verifies every remaining page", BrowserRecoveryAsync),
             ("Scope fallback retries neutral genre once without mixing partial text", NeutralGenreFallback),
             ("Neutral genre fallback preserves adult permission and non-scope failures", FallbackScopeAndPermission),
             ("HTTP page spacing is configurable and cancellable", PageSpacing),
@@ -373,6 +374,55 @@ internal static class Program
         Sequence(new[] { PageUrl(22) }, retryHandler.RequestUris);
         Equal(total, book.PageCount);
         Equal("Страница из браузера.", book.Paragraphs[20]);
+    }
+
+    private static async Task BrowserRecoveryAsync()
+    {
+        using var folder = new TemporaryDirectory();
+        const int total = 23;
+        var responses = Enumerable.Range(1, 21).Select(number =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(PageHtml($"Тестовая страница {number}.<br>", number + 1, total))
+            }).Append(new HttpResponseMessage(HttpStatusCode.TemporaryRedirect)
+            {
+                Headers = { Location = new Uri("/immortal/", UriKind.Relative) }
+            }).ToArray();
+        DownloadCheckpoint? checkpoint = null;
+        using (var handler = new SequenceHandler(responses))
+        using (var http = new HttpClient(handler))
+        using (var source = new SefanSource(http, TimeSpan.Zero))
+        {
+            await ThrowsAsync<InvalidDataException>(() => new StoryDownloader(source, folder.Path).DownloadAsync(
+                Source, false, false, new InlineProgress(progress => checkpoint = progress.Checkpoint ?? checkpoint),
+                CancellationToken.None));
+            Sequence(Enumerable.Range(1, 22).Select(PageUrl), handler.RequestUris);
+        }
+        Equal(PageUrl(21), checkpoint?.LastSuccessfulPageUrl);
+        Equal(PageUrl(22), checkpoint?.PendingPageUrl);
+
+        var visited = new List<Uri>();
+        Task<StoryPage> Browse(Uri target, Func<Uri, string, StoryPage> parse, CancellationToken token)
+        {
+            visited.Add(target);
+            int number = target == PageUrl(22) ? 22 : 23;
+            var html = PageHtml($"Браузерная страница {number}.<br>", number < total ? number + 1 : null, total)
+                .Replace("</head>", $"<link rel='canonical' href='{target}'></head>");
+            Throws<ArgumentException>(() => parse(new Uri("https://sefan.ru/immortal/"), html));
+            Throws<InvalidDataException>(() => parse(PageUrl(21), html));
+            Throws<InvalidDataException>(() => parse(target, html.Replace(target.AbsoluteUri, PageUrl(20).AbsoluteUri)));
+            return Task.FromResult(parse(target, html));
+        }
+
+        using var noHttp = new SequenceHandler(Array.Empty<string>());
+        using var browserClient = new HttpClient(noHttp);
+        using var browserSource = new SefanSource(browserClient, TimeSpan.Zero, browser: Browse);
+        var book = await new StoryDownloader(browserSource, folder.Path).DownloadAsync(Source, false, false,
+            null, CancellationToken.None, new DownloadRecovery(checkpoint, null));
+        Sequence(new[] { PageUrl(22), PageUrl(23) }, visited);
+        Equal(0, noHttp.RequestUris.Count);
+        Equal(total, book.PageCount);
+        Equal("Браузерная страница 23.", book.Paragraphs[^1]);
     }
 
     private static async Task NeutralGenreFallback()

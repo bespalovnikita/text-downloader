@@ -1,5 +1,8 @@
 namespace TextDownloader.Core;
 
+/// <summary>Opens a page in the browser and gives its actual address and HTML to the source validator.</summary>
+public delegate Task<StoryPage> BrowserPageReader(Uri target, Func<Uri, string, StoryPage> readPage, CancellationToken token);
+
 /// <summary>A source whose logical book is assembled from independently addressed posts.</summary>
 public interface IBookStorySource : IStorySource
 {

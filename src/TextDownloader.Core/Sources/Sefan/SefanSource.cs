@@ -15,6 +15,7 @@ public sealed partial class SefanSource : IStorySource, IPagedBookSource
     private readonly TimeSpan _requestInterval;
     private readonly PageRequestThrottle _requestThrottle;
     private readonly IProgress<DownloadLogEvent>? _log;
+    private readonly BrowserPageReader? _browser;
     private static readonly Regex PathPattern = new(
         @"^(?<directory>/stories/(?<language>[a-z]{2})/\d+/(?<genre>[^/]+)/)(?<slug>[^/]+?)_(?<part>\d+)(?:-(?<page>\d+))?\.html$",
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
@@ -26,17 +27,18 @@ public sealed partial class SefanSource : IStorySource, IPagedBookSource
     static SefanSource() => Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
     public SefanSource(HttpClient? client = null, TimeSpan? requestInterval = null,
-        IProgress<DownloadLogEvent>? log = null)
-        : this(client, requestInterval ?? TimeSpan.FromSeconds(1), new PageRequestThrottle(), log) { }
+        IProgress<DownloadLogEvent>? log = null, BrowserPageReader? browser = null)
+        : this(client, requestInterval ?? TimeSpan.FromSeconds(1), new PageRequestThrottle(), log, browser) { }
 
     internal SefanSource(HttpClient? client, TimeSpan requestInterval, PageRequestThrottle requestThrottle,
-        IProgress<DownloadLogEvent>? log)
+        IProgress<DownloadLogEvent>? log, BrowserPageReader? browser)
     {
         if (requestInterval < TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(requestInterval));
         _requestInterval = requestInterval;
         _requestThrottle = requestThrottle;
         _log = log;
+        _browser = browser;
         _ownsClient = client is null;
         _client = client ?? new HttpClient(new HttpClientHandler
         {
@@ -80,7 +82,12 @@ public sealed partial class SefanSource : IStorySource, IPagedBookSource
     {
         expected = Normalize(expected);
         var bytes = await ReadPageBytesAsync(html, token).ConfigureAwait(false);
-        var document = LoadDocument(Decode(bytes, null));
+        return ParseSavedPage(Decode(bytes, null), expected);
+    }
+
+    private static StoryPage ParseSavedPage(string html, Uri expected)
+    {
+        var document = LoadDocument(html);
         if (FindAgeGate(document) is not null) throw new AgeConfirmationRequiredException();
         var canonical = document.DocumentNode.Descendants("link").Where(node => Tokens(node, "rel").Contains("canonical"))
             .Select(node => Attribute(node, "href")).Distinct(StringComparer.Ordinal).ToArray();
@@ -114,12 +121,27 @@ public sealed partial class SefanSource : IStorySource, IPagedBookSource
     public async Task<StoryPage> GetPageAsync(Uri uri, bool confirmAdult, CancellationToken cancellationToken)
     {
         var original = Normalize(uri);
-        var (document, actual) = await GetDocumentAsync(original, confirmAdult, cancellationToken, candidate =>
+        void ValidateAddress(Uri candidate)
         {
             var normalized = SameStory(candidate, original);
             if (PageNumber(normalized) != PageNumber(original))
                 throw new InvalidDataException("Сайт перенаправил на другую страницу рассказа.");
-        }).ConfigureAwait(false);
+        }
+        if (_browser is not null)
+        {
+            await _requestThrottle.EnterAsync(_requestInterval, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                _log?.Report(new(DownloadLogLevel.Detail, $"Браузер · {original}"));
+                return await _browser(original, (address, html) =>
+                {
+                    ValidateAddress(address);
+                    return ParseSavedPage(html, original);
+                }, cancellationToken).ConfigureAwait(false);
+            }
+            finally { _requestThrottle.Exit(); }
+        }
+        var (document, actual) = await GetDocumentAsync(original, confirmAdult, cancellationToken, ValidateAddress).ConfigureAwait(false);
         return Parse(document, Normalize(actual));
     }
 

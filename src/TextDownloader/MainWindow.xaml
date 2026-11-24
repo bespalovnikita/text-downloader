@@ -65,7 +65,7 @@
       <StackPanel.Style>
        <Style TargetType="StackPanel"><Style.Triggers><DataTrigger Binding="{Binding RecoveryItem}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style>
       </StackPanel.Style>
-      <TextBlock Text="Продолжение после ошибки" FontWeight="SemiBold"/>
+      <TextBlock Text="Продолжение загрузки" FontWeight="SemiBold"/>
       <TextBlock Text="{Binding RecoveryItem.Message}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" MaxHeight="42" Margin="0,4,0,0"/>
       <TextBlock Text="Последняя успешно загруженная страница" Foreground="{StaticResource MutedBrush}" Margin="0,6,0,2"/>
       <DockPanel LastChildFill="True">
@@ -91,6 +91,13 @@
         <Button x:Name="ImportRecoveryPageButton" Content="Добавить HTML…" Click="OnImportRecoveryPage"
                 ToolTip="Сохраните HTML страницы чтения в браузере и выберите этот файл."/>
        </StackPanel>
+       <Button x:Name="BrowserRecoveryButton" Content="Продолжить через браузер" Click="OnBrowserRecovery" IsEnabled="{Binding CanStart}">
+        <Button.Style>
+         <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+          <Style.Triggers><DataTrigger Binding="{Binding CanImportRecoveryPage}" Value="False"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers>
+         </Style>
+        </Button.Style>
+       </Button>
       </WrapPanel>
      </StackPanel>
      <Expander Grid.Row="4" Header="Журнал" Foreground="#EEF1F8" Margin="0,12,0,0">

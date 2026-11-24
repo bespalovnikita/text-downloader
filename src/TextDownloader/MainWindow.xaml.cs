@@ -28,6 +28,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly AppStore _store;
     private readonly QueueCache _cache;
     private readonly Func<TimeSpan, IProgress<DownloadLogEvent>?, IStorySource> _sourceFactory;
+    private readonly Func<TimeSpan, IProgress<DownloadLogEvent>?, BrowserPageReader?, IStorySource> _sessionSourceFactory;
     private readonly bool _enableTray;
     private readonly IAppUpdateClient _updateClient;
     private readonly bool _ownsUpdateClient;
@@ -159,7 +160,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _store = new AppStore(profileDirectory);
         _cache = new QueueCache(_store.CacheDirectory);
-        _sourceFactory = sourceFactory is null ? SupportedStorySource.CreateLoggedFactory() : (_, _) => sourceFactory();
+        _sessionSourceFactory = SupportedStorySource.CreateSessionFactory();
+        _sourceFactory = sourceFactory is null
+            ? (delay, log) => _sessionSourceFactory(delay, log, null)
+            : (_, _) => sourceFactory();
         JournalView = CreateJournalView();
         _enableTray = enableTray;
         _ownsUpdateClient = updateClient is null;
@@ -283,7 +287,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         PreviewText = "";
         PreviewStatus = item is null ? "" : "Получаем сведения…";
         if (item is null) return;
-        if (!force && item.Status == QueueStatus.Failed && item.Checkpoint?.PendingPageUrl is not null)
+        if (!force && item.Status is (QueueStatus.Failed or QueueStatus.Paused) && item.Checkpoint?.PendingPageUrl is not null)
         {
             PreviewStatus = item.Message;
             return;
@@ -325,18 +329,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (!CanStart) return;
         QueueItem[] pending = Items.Where(item => item.Status is QueueStatus.Queued or QueueStatus.Paused).ToArray();
         if (pending.Length == 0) { CurrentStatus = "Нет ожидающих заданий. Для ошибок нажмите «Повторить ошибки»."; return; }
+        await StartSessionAsync(pending, RefreshCache);
+    }
+
+    private async Task StartSessionAsync(QueueItem[] pending, bool refresh, BrowserPageReader? browser = null)
+    {
         if (string.IsNullOrWhiteSpace(OutputDirectory) || !Path.IsPathFullyQualified(OutputDirectory))
         { CurrentStatus = "Укажите полный путь к папке книг."; return; }
         _stopReason = StopReason.None;
         _sessionStop?.Dispose();
         _sessionStop = new CancellationTokenSource();
         IsBusy = true;
-        _sessionTask = RunSessionAsync(pending, Path.GetFullPath(OutputDirectory), Format, ConfirmAdult, RefreshCache, _settings.GetPageDelay(), _sessionStop.Token);
+        _sessionTask = RunSessionAsync(pending, Path.GetFullPath(OutputDirectory), Format, ConfirmAdult,
+            refresh, _settings.GetPageDelay(), _sessionStop.Token, browser);
         await _sessionTask;
         CurrentUpdateWindow?.RefreshInstallEligibility();
     }
 
-    private async Task RunSessionAsync(QueueItem[] pending, string directory, BookFormat format, bool confirmAdult, bool refresh, TimeSpan pageDelay, CancellationToken token)
+    private async Task RunSessionAsync(QueueItem[] pending, string directory, BookFormat format, bool confirmAdult, bool refresh,
+        TimeSpan pageDelay, CancellationToken token, BrowserPageReader? browser)
     {
         string? sessionError = null;
         Log($"Очередь запущена. Заданий: {pending.Length}. Формат: {format}. Интервал запросов: {pageDelay.TotalSeconds:0.#######} с.");
@@ -367,7 +378,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 try
                 {
                     var url = new Uri(item.Url);
-                    using IStorySource source = _sourceFactory(pageDelay, log);
+                    using IStorySource source = browser is null ? _sourceFactory(pageDelay, log) : _sessionSourceFactory(pageDelay, log, browser);
                     var info = source.Describe(url);
                     var progress = new Progress<DownloadProgress>(p =>
                     {
@@ -555,7 +566,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void RefreshPageRecovery()
     {
         static bool CanRecover(QueueItem? item) =>
-            item?.Status == QueueStatus.Failed && item.Checkpoint?.PendingPageUrl is not null;
+            item?.Status is (QueueStatus.Failed or QueueStatus.Paused) && item.Checkpoint?.PendingPageUrl is not null;
         RecoveryItem = CanRecover(SelectedItem) ? SelectedItem : Items.LastOrDefault(CanRecover);
     }
 
@@ -595,6 +606,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (!CanEditSettings || !CanImportRecoveryPage || RecoveryItem?.Checkpoint?.PendingPageUrl is not { } url) return;
         try { Process.Start(new ProcessStartInfo(url.AbsoluteUri) { UseShellExecute = true }); }
         catch (Win32Exception error) { RecoveryError.Text = "Не удалось открыть браузер. " + error.Message; }
+    }
+
+    private async void OnBrowserRecovery(object sender, RoutedEventArgs e)
+    {
+        if (!CanStart || !CanImportRecoveryPage || RecoveryItem is not { } item) return;
+        var browser = new ReadingBrowserWindow(Path.Combine(ProfileDirectory, "browser")) { Owner = this };
+        browser.Show();
+        try
+        {
+            var session = StartSessionAsync([item], refresh: false, browser.ReadPageAsync);
+            var stop = _sessionStop;
+            browser.Closed += (_, _) => { if (IsBusy && _sessionStop == stop) Pause(); };
+            await session;
+        }
+        finally { if (browser.IsVisible) browser.Close(); }
     }
 
     private async void OnImportRecoveryPage(object sender, RoutedEventArgs e)
