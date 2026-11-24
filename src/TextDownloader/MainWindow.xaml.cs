@@ -28,7 +28,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly AppStore _store;
     private readonly QueueCache _cache;
     private readonly Func<TimeSpan, IProgress<DownloadLogEvent>?, IStorySource> _sourceFactory;
-    private readonly Func<TimeSpan, IProgress<DownloadLogEvent>?, BrowserPageReader?, IStorySource> _sessionSourceFactory;
+    private readonly Func<TimeSpan, IProgress<DownloadLogEvent>?, IReadingBrowser?, SiteAuthorization?, IStorySource> _sessionSourceFactory;
     private readonly bool _enableTray;
     private readonly IAppUpdateClient _updateClient;
     private readonly bool _ownsUpdateClient;
@@ -78,6 +78,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             RecoveryPageInput.Text = value?.Checkpoint?.PendingPageUrl?.AbsoluteUri ?? "";
             RecoveryError.Text = "";
             Changed(nameof(CanImportRecoveryPage));
+            Changed(nameof(CanRecoverInBrowser));
         }
     }
 
@@ -88,6 +89,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (RecoveryItem?.Checkpoint?.PendingPageUrl is not { } pending || !_store.CanWrite) return false;
             using IStorySource source = _sourceFactory(_settings.GetPageDelay(), null);
             return source.CanImportSavedPage(pending);
+        }
+    }
+
+    public bool CanRecoverInBrowser
+    {
+        get
+        {
+            if (RecoveryItem is not { } item || !_store.CanWrite) return false;
+            using IStorySource source = _sourceFactory(_settings.GetPageDelay(), null);
+            return source.CanReadInBrowser(new Uri(item.Url));
         }
     }
 
@@ -160,9 +171,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _store = new AppStore(profileDirectory);
         _cache = new QueueCache(_store.CacheDirectory);
+        _authorizationStore = new SiteAuthorizationStore(_store.DirectoryPath);
         _sessionSourceFactory = SupportedStorySource.CreateSessionFactory();
         _sourceFactory = sourceFactory is null
-            ? (delay, log) => _sessionSourceFactory(delay, log, null)
+            ? (delay, log) => _sessionSourceFactory(delay, log, null, null)
             : (_, _) => sourceFactory();
         JournalView = CreateJournalView();
         _enableTray = enableTray;
@@ -186,6 +198,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var cleanup = await Task.Run(() => _cache.CleanExpired(saved, DateTimeOffset.UtcNow));
             saveCleanup = cleanup.Reset > 0;
             _settings = saved.Settings;
+            await LoadSiteAuthorizationAsync();
             if (cleanup.Removed > 0 || cleanup.Reset > 0)
                 Log($"Очистка кеша. Удалено каталогов: {cleanup.Removed}, сброшено заданий: {cleanup.Reset}.");
             foreach (var warning in cleanup.Warnings)
@@ -294,15 +307,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         bool confirmAdult = ConfirmAdult;
         TimeSpan pageDelay = _settings.GetPageDelay();
+        var url = new Uri(item.Url);
+        var rule = RuleFor(url);
+        if (rule?.Method == SiteAuthorizationMethod.Browser)
+        {
+            PreviewStatus = "Браузер для входа откроется при запуске загрузки.";
+            return;
+        }
         var log = SourceJournal(item, "Предпросмотр · ");
         Log("Запрос предпросмотра.", DownloadLogLevel.Detail, item);
         try
         {
             var (page, info, hint) = await Task.Run(async () =>
             {
-                using IStorySource source = _sourceFactory(pageDelay, log);
+                using IStorySource source = CreateSourceFor(pageDelay, log, rule);
                 var downloader = new StoryDownloader(source, _store.CacheDirectory);
-                var preview = await downloader.PreviewAsync(new Uri(item.Url), confirmAdult, token);
+                var preview = await downloader.PreviewAsync(url, confirmAdult, token);
                 return (preview, source.Describe(preview.Url), source.DescribePreview(preview));
             }, token);
             if (token.IsCancellationRequested || SelectedItem != item) return;
@@ -332,7 +352,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         await StartSessionAsync(pending, RefreshCache);
     }
 
-    private async Task StartSessionAsync(QueueItem[] pending, bool refresh, BrowserPageReader? browser = null)
+    private async Task StartSessionAsync(QueueItem[] pending, bool refresh, bool useBrowser = false)
     {
         if (string.IsNullOrWhiteSpace(OutputDirectory) || !Path.IsPathFullyQualified(OutputDirectory))
         { CurrentStatus = "Укажите полный путь к папке книг."; return; }
@@ -341,13 +361,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _sessionStop = new CancellationTokenSource();
         IsBusy = true;
         _sessionTask = RunSessionAsync(pending, Path.GetFullPath(OutputDirectory), Format, ConfirmAdult,
-            refresh, _settings.GetPageDelay(), _sessionStop.Token, browser);
+            refresh, _settings.GetPageDelay(), _sessionStop.Token, useBrowser);
         await _sessionTask;
         CurrentUpdateWindow?.RefreshInstallEligibility();
     }
 
     private async Task RunSessionAsync(QueueItem[] pending, string directory, BookFormat format, bool confirmAdult, bool refresh,
-        TimeSpan pageDelay, CancellationToken token, BrowserPageReader? browser)
+        TimeSpan pageDelay, CancellationToken token, bool useBrowser)
     {
         string? sessionError = null;
         Log($"Очередь запущена. Заданий: {pending.Length}. Формат: {format}. Интервал запросов: {pageDelay.TotalSeconds:0.#######} с.");
@@ -375,10 +395,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 CurrentStatus = item.DisplayTitle;
                 Log((recovery.Checkpoint is null ? "Начинаем загрузку" : "Продолжаем загрузку") + $" · {item.Url}", item: item);
                 var log = SourceJournal(item);
+                ReadingBrowserWindow? browser = null;
+                EventHandler? closeBrowser = null;
                 try
                 {
                     var url = new Uri(item.Url);
-                    using IStorySource source = browser is null ? _sourceFactory(pageDelay, log) : _sessionSourceFactory(pageDelay, log, browser);
+                    var rule = RuleFor(url);
+                    if (useBrowser || rule?.Method == SiteAuthorizationMethod.Browser)
+                    {
+                        browser = OpenReadingBrowser(this, rule?.Method == SiteAuthorizationMethod.Browser ? rule : null);
+                        closeBrowser = (_, _) => Pause();
+                        browser.Closed += closeBrowser;
+                    }
+                    using IStorySource source = CreateSourceFor(pageDelay, log, rule, browser);
+                    if (browser is not null && !source.CanReadInBrowser(url))
+                        throw new InvalidDataException("Источник пока не поддерживает загрузку через браузер.");
                     var info = source.Describe(url);
                     var progress = new Progress<DownloadProgress>(p =>
                     {
@@ -455,6 +486,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     CurrentStatus = item.DisplayTitle + ": " + item.Message;
                     Log(error.Message, DownloadLogLevel.Error, item);
                     if (_saveFailed) break;
+                }
+                finally
+                {
+                    if (browser is not null)
+                    {
+                        browser.Closed -= closeBrowser;
+                        if (browser.IsVisible) browser.Close();
+                    }
                 }
             }
         }
@@ -610,17 +649,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void OnBrowserRecovery(object sender, RoutedEventArgs e)
     {
-        if (!CanStart || !CanImportRecoveryPage || RecoveryItem is not { } item) return;
-        var browser = new ReadingBrowserWindow(Path.Combine(ProfileDirectory, "browser")) { Owner = this };
-        browser.Show();
-        try
-        {
-            var session = StartSessionAsync([item], refresh: false, browser.ReadPageAsync);
-            var stop = _sessionStop;
-            browser.Closed += (_, _) => { if (IsBusy && _sessionStop == stop) Pause(); };
-            await session;
-        }
-        finally { if (browser.IsVisible) browser.Close(); }
+        if (!CanStart || !CanRecoverInBrowser || RecoveryItem is not { } item) return;
+        await StartSessionAsync([item], refresh: false, useBrowser: true);
     }
 
     private async void OnImportRecoveryPage(object sender, RoutedEventArgs e)

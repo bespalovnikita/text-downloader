@@ -31,6 +31,7 @@ internal static class Program
             ("A non-reading redirect leaves the verified prefix reusable", RedirectOutsideReadingAsync),
             ("Saved browser HTML fills a redirected page and resumes with the next page", ImportSavedPageAsync),
             ("Browser recovery reuses the saved prefix and verifies every remaining page", BrowserRecoveryAsync),
+            ("Site authorization scopes credentials to one exact HTTPS host", SiteAuthorizationTests.RunAsync),
             ("Scope fallback retries neutral genre once without mixing partial text", NeutralGenreFallback),
             ("Neutral genre fallback preserves adult permission and non-scope failures", FallbackScopeAndPermission),
             ("HTTP page spacing is configurable and cancellable", PageSpacing),
@@ -402,7 +403,7 @@ internal static class Program
         Equal(PageUrl(22), checkpoint?.PendingPageUrl);
 
         var visited = new List<Uri>();
-        Task<StoryPage> Browse(Uri target, Func<Uri, string, StoryPage> parse, CancellationToken token)
+        object Browse(Uri target, Func<Uri, string, object> parse)
         {
             visited.Add(target);
             int number = target == PageUrl(22) ? 22 : 23;
@@ -411,12 +412,12 @@ internal static class Program
             Throws<ArgumentException>(() => parse(new Uri("https://sefan.ru/immortal/"), html));
             Throws<InvalidDataException>(() => parse(PageUrl(21), html));
             Throws<InvalidDataException>(() => parse(target, html.Replace(target.AbsoluteUri, PageUrl(20).AbsoluteUri)));
-            return Task.FromResult(parse(target, html));
+            return parse(target, html);
         }
 
         using var noHttp = new SequenceHandler(Array.Empty<string>());
         using var browserClient = new HttpClient(noHttp);
-        using var browserSource = new SefanSource(browserClient, TimeSpan.Zero, browser: Browse);
+        using var browserSource = new SefanSource(browserClient, TimeSpan.Zero, browser: new TestReadingBrowser(Browse));
         var book = await new StoryDownloader(browserSource, folder.Path).DownloadAsync(Source, false, false,
             null, CancellationToken.None, new DownloadRecovery(checkpoint, null));
         Sequence(new[] { PageUrl(22), PageUrl(23) }, visited);
@@ -983,6 +984,15 @@ internal static class Program
     {
         public List<DownloadLogEvent> Events { get; } = [];
         public void Report(DownloadLogEvent value) => Events.Add(value);
+    }
+
+    private sealed class TestReadingBrowser(Func<Uri, Func<Uri, string, object>, object> read) : IReadingBrowser
+    {
+        public Task<T> ReadPageAsync<T>(Uri target, Func<Uri, string, T> parse, CancellationToken token) where T : class
+        {
+            token.ThrowIfCancellationRequested();
+            return Task.FromResult((T)read(target, parse));
+        }
     }
 
     private sealed class SequenceHandler : HttpMessageHandler

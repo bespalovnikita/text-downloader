@@ -1,0 +1,71 @@
+<Window x:Class="TextDownloader.SiteAuthorizationWindow" x:ClassModifier="internal"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:core="clr-namespace:TextDownloader.Core;assembly=TextDownloader.Core"
+ Title="Авторизация сайтов" Width="890" Height="750" MinWidth="670" MinHeight="550"
+ Background="#171A20" Foreground="#EEF1F8" WindowStartupLocation="CenterOwner">
+ <Window.Resources><ResourceDictionary Source="/TextDownloader;component/Styles.xaml"/></Window.Resources>
+ <DockPanel Margin="16">
+  <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
+   <TextBlock x:Name="Status" TextWrapping="Wrap" Margin="2,0,2,6"/>
+   <WrapPanel HorizontalAlignment="Right">
+    <Button x:Name="CheckRule" Content="Проверить вход" Click="OnCheck"/>
+    <Button x:Name="SaveRule" Content="Сохранить правило" Background="{StaticResource AccentBrush}" Click="OnSave"/>
+    <Button Content="Закрыть" Click="OnClose"/>
+   </WrapPanel>
+  </StackPanel>
+  <Grid>
+   <Grid.ColumnDefinitions><ColumnDefinition Width="260"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+   <DockPanel Margin="0,0,12,0">
+    <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+     <Button x:Name="NewRule" Content="Добавить" Click="OnNew"/>
+     <Button x:Name="RemoveRule" Content="Удалить" Click="OnRemove" IsEnabled="False"/>
+    </WrapPanel>
+    <ListBox x:Name="RulesList" SelectionChanged="OnSelect" AutomationProperties.Name="Правила авторизации">
+     <ListBox.ItemTemplate><DataTemplate><StackPanel Margin="4">
+      <TextBlock Text="{Binding Rule.Host}" FontWeight="SemiBold"/>
+      <TextBlock Text="{Binding Summary}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
+     </StackPanel></DataTemplate></ListBox.ItemTemplate>
+    </ListBox>
+   </DockPanel>
+   <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
+    <StackPanel x:Name="Editor" Margin="8,0,12,0">
+     <Label Content="Домен сайта" Target="{Binding ElementName=HostInput}"/>
+     <TextBox x:Name="HostInput" MaxLength="253"/>
+     <Label Content="Способ входа" Target="{Binding ElementName=Mode}"/>
+     <ComboBox x:Name="Mode" SelectedValuePath="Tag" SelectionChanged="OnModeChanged">
+      <ComboBoxItem Content="Вход через браузер" Tag="{x:Static core:SiteAuthorizationMethod.Browser}"/>
+      <ComboBoxItem Content="Логин и пароль (HTTP Basic)" Tag="{x:Static core:SiteAuthorizationMethod.Basic}"/>
+      <ComboBoxItem Content="Bearer-токен" Tag="{x:Static core:SiteAuthorizationMethod.Bearer}"/>
+      <ComboBoxItem Content="Cookies" Tag="{x:Static core:SiteAuthorizationMethod.Cookies}"/>
+     </ComboBox>
+     <CheckBox x:Name="EnabledRule" Content="Использовать правило" Margin="2,8,0,4"/>
+     <StackPanel x:Name="BrowserSettings">
+      <Label Content="Адрес страницы входа (необязательно)" Target="{Binding ElementName=SignInInput}"/>
+      <TextBox x:Name="SignInInput" MaxLength="2048"/>
+      <Label Content="Дополнительные домены входа через запятую" Target="{Binding ElementName=SignInHostsInput}"/>
+      <TextBox x:Name="SignInHostsInput" MaxLength="2048"/>
+      <CheckBox x:Name="FillForm" Content="Сохранить логин и пароль для веб-формы" Checked="OnFillFormChanged" Unchecked="OnFillFormChanged" Margin="2,8,0,4"/>
+     </StackPanel>
+     <StackPanel x:Name="LoginFields">
+      <Label Content="Логин" Target="{Binding ElementName=LoginInput}"/>
+      <TextBox x:Name="LoginInput" MaxLength="512"/>
+      <StackPanel x:Name="FormFieldNames">
+       <Label Content="Имя поля логина (атрибут name)" Target="{Binding ElementName=UserFieldInput}"/>
+       <TextBox x:Name="UserFieldInput" MaxLength="120"/>
+       <Label Content="Имя поля пароля (атрибут name)" Target="{Binding ElementName=PasswordFieldInput}"/>
+       <TextBox x:Name="PasswordFieldInput" MaxLength="120"/>
+      </StackPanel>
+     </StackPanel>
+     <StackPanel x:Name="SecretFields">
+      <Label x:Name="SecretLabel" Target="{Binding ElementName=SecretInput}"/>
+      <PasswordBox x:Name="SecretInput" MaxLength="16384" Background="#232831" Foreground="#EEF1F8" Padding="8,5"/>
+      <TextBlock Text="При редактировании пустое поле сохраняет прежнее значение." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="2,3,0,0"/>
+     </StackPanel>
+     <Label Content="Ссылка на страницу чтения для проверки входа" Target="{Binding ElementName=CheckUrlInput}"/>
+     <TextBox x:Name="CheckUrlInput" MaxLength="2048"/>
+    </StackPanel>
+   </ScrollViewer>
+  </Grid>
+ </DockPanel>
+</Window>

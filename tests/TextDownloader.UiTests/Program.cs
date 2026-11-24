@@ -27,6 +27,7 @@ internal static class Program
                 await ManualRecoveryAsync();
                 await SavedPageRecoveryAsync();
                 await BrowserReadingAsync();
+                await SiteAuthorizationUiTests.RunAsync(Path.Combine(Root, "authorization"));
                 await UpdateUiTests.RunAsync(Path.Combine(Root, "updates"));
                 await BestweaponUiTests.RunAsync(Path.Combine(Root, "bestweapon"));
                 Console.WriteLine("PASS: real WPF add/preview/pause/resume/cancel/retry/export/history/restore/corrupt-profile scenarios");
@@ -295,16 +296,26 @@ internal static class Program
     {
         const string host = "sefan.ru";
         var address = new Uri($"https://{host}/stories/ru/2/drama/browser-recovery_1-22.html");
+        var login = new Uri($"https://{host}/login.html");
         string site = Path.Combine(Root, "browser-site");
         string document = Path.Combine(site, "stories", "ru", "2", "drama", "browser-recovery_1-22.html");
         Directory.CreateDirectory(Path.GetDirectoryName(document)!);
         await File.WriteAllTextAsync(document, $"""
             <!doctype html><html><head><meta charset="utf-8"><link rel="canonical" href="{address}"></head>
-            <body><h1>Тестовый рассказ</h1><div id="rsz">Страница 22 из встроенного браузера.</div>
-            <span class="but">Далее</span></body></html>
+            <body><script>
+            if (localStorage.getItem('signed-in') === 'yes')
+                document.body.insertAdjacentHTML('beforeend', '<h1>Тестовый рассказ</h1><div id="rsz">Страница 22 из встроенного браузера.</div><span class="but">Далее</span>');
+            </script></body></html>
+            """);
+        await File.WriteAllTextAsync(Path.Combine(site, "login.html"), """
+            <!doctype html><html><body><form action="/login.html" method="post" onsubmit="event.preventDefault(); localStorage.setItem('signed-in', 'yes');">
+            <input name="username"><input type="password" name="password"><button type="submit">Войти</button>
+            </form></body></html>
             """);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(25));
-        var browser = new ReadingBrowserWindow(Path.Combine(Root, "browser-profile"));
+        var rule = new SiteAuthorization { Host = host, SignInUrl = login.AbsoluteUri, UserName = "synthetic-user",
+            Secret = "synthetic-password", UserField = "username", PasswordField = "password" };
+        var browser = new ReadingBrowserWindow(Path.Combine(Root, "browser-profile"), rule);
         browser.Show();
         try
         {
@@ -316,8 +327,23 @@ internal static class Program
             }
             var webView = (WebView2)browser.FindName("PageView");
             webView.CoreWebView2.SetVirtualHostNameToFolderMapping(host, site, CoreWebView2HostResourceAccessKind.DenyCors);
-            using var source = new SefanSource(browser: browser.ReadPageAsync);
-            var page = await source.GetPageAsync(address, false, timeout.Token);
+            using var source = new SefanSource(browser: browser);
+            var pending = source.GetPageAsync(address, false, timeout.Token);
+            var openLogin = (Button)browser.FindName("OpenSignIn");
+            while (!openLogin.IsEnabled) await Task.Delay(30, timeout.Token);
+            openLogin.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            while (webView.Source != login ||
+                await webView.ExecuteScriptAsync("document.querySelector('input[type=password]') !== null") != "true")
+                await Task.Delay(30, timeout.Token);
+            ((Button)browser.FindName("FillSignIn")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            while (await webView.ExecuteScriptAsync("""
+                document.querySelector('[name=username]').value === 'synthetic-user' &&
+                document.querySelector('[name=password]').value === 'synthetic-password'
+                """) != "true")
+                await Task.Delay(30, timeout.Token);
+            await webView.ExecuteScriptAsync("document.querySelector('button').click()");
+            ((Button)browser.FindName("OpenExpected")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            var page = await pending;
             Assert(page.Url == address && page.Number == 22 && page.TotalPages == 22 &&
                 page.Fragment.Contains("Страница 22 из встроенного браузера."), "WebView2 did not return the verified browser page");
             Console.WriteLine("PASS: embedded WebView2 fetched and validated an offline numbered page");
