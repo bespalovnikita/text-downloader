@@ -41,6 +41,43 @@ public sealed class StoryDownloader
         return sources.ValidateReplacementPage(expected, candidate);
     }
 
+    public async Task<StoryPage> ImportSavedPageAsync(DownloadCheckpoint checkpoint, Stream html, CancellationToken token)
+    {
+        if (checkpoint.PendingPageUrl is not { } pending || !_source.CanImportSavedPage(pending) ||
+            _source.GetPageNumber(pending) is not { } number)
+            throw new InvalidDataException("Для этой страницы импорт HTML недоступен.");
+        if (number < 1 || number > MaxPages)
+            throw new InvalidDataException("Номер страницы выходит за пределы загрузки.");
+
+        Uri first = _source.NormalizeToFirstPage(checkpoint.AttemptStartUrl);
+        _source.ValidatePageRoute(first, pending, number);
+        var page = await _source.ReadSavedPageAsync(pending, html, token).ConfigureAwait(false);
+        ValidatePage(page, first, pending, number);
+
+        string cache = PartCacheDirectory(first);
+        int? total = null;
+        long characters = page.Fragment.Length;
+        var fingerprints = new HashSet<string>(StringComparer.Ordinal);
+        Uri? next = first;
+        for (int current = 1; current < number; current++)
+        {
+            if (next is null || await ReadCacheAsync(cache, current, first, next, token).ConfigureAwait(false) is not { } saved)
+                throw new InvalidDataException("Предыдущие страницы отсутствуют в кеше. Повторите загрузку перед импортом HTML.");
+            fingerprints.Add(ValidateChainPage(saved, total, fingerprints));
+            total ??= saved.TotalPages;
+            characters += saved.Fragment.Length;
+            next = saved.NextUrl;
+        }
+        if (next is null)
+            throw new InvalidDataException("Сохранённая навигация не ведёт к импортируемой странице.");
+        _source.ValidatePageRoute(first, next, number);
+        if (characters > MaxStoryCharacters)
+            throw new InvalidDataException("Текст превышает допустимый объём одного рассказа.");
+        ValidateChainPage(page, total, fingerprints);
+        await WriteCacheAsync(cache, page, token).ConfigureAwait(false);
+        return page;
+    }
+
     public async Task<BookDocument> DownloadAsync(Uri url, bool confirmAdult, bool refresh,
         IProgress<DownloadProgress>? progress, CancellationToken cancellationToken, DownloadRecovery? recovery = null)
     {

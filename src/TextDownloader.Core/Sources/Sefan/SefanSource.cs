@@ -74,6 +74,25 @@ public sealed partial class SefanSource : IStorySource, IPagedBookSource
         catch (ArgumentException) { return false; }
     }
 
+    public bool CanImportSavedPage(Uri uri) => CanHandle(uri);
+
+    public async Task<StoryPage> ReadSavedPageAsync(Uri expected, Stream html, CancellationToken token)
+    {
+        expected = Normalize(expected);
+        var bytes = await ReadPageBytesAsync(html, token).ConfigureAwait(false);
+        var document = LoadDocument(Decode(bytes, null));
+        if (FindAgeGate(document) is not null) throw new AgeConfirmationRequiredException();
+        var canonical = document.DocumentNode.Descendants("link").Where(node => Tokens(node, "rel").Contains("canonical"))
+            .Select(node => Attribute(node, "href")).Distinct(StringComparer.Ordinal).ToArray();
+        if (canonical.Length != 1 || !Uri.TryCreate(canonical[0], UriKind.Absolute, out var url))
+            throw new InvalidDataException("В файле отсутствует однозначный адрес страницы. Сохраните исходный HTML страницы чтения.");
+        if (!IsSameReadingStory(url, expected) || PageNumber(url) != PageNumber(expected))
+            throw new InvalidDataException("HTML относится к другому рассказу, части или номеру страницы.");
+        if (document.GetElementbyId("rsz") is not { Closed: true })
+            throw new InvalidDataException("В HTML отсутствует полный блок текста страницы.");
+        return Parse(document, Normalize(url));
+    }
+
     public Uri ValidateReplacementPage(Uri expected, Uri candidate) => ValidateReplacementUrl(expected, candidate);
     public int? GetPageNumber(Uri uri) => PageNumber(uri);
 
@@ -314,17 +333,9 @@ public sealed partial class SefanSource : IStorySource, IPagedBookSource
                         if (!response.IsSuccessStatusCode) throw new InvalidDataException($"Сайт вернул HTTP {(int)response.StatusCode}.");
                         if (response.Content.Headers.ContentLength > MaxResponseBytes) throw new InvalidDataException("Страница неожиданно велика.");
                         await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
-                        using var buffer = new MemoryStream();
-                        var bytes = new byte[81920];
-                        while (true)
-                        {
-                            var read = await stream.ReadAsync(bytes, timeout.Token).ConfigureAwait(false);
-                            if (read == 0) break;
-                            if (buffer.Length + read > MaxResponseBytes) throw new InvalidDataException("Страница неожиданно велика.");
-                            buffer.Write(bytes, 0, read);
-                        }
-                        if (buffer.Length == 0) throw new HttpRequestException("Сайт вернул пустую страницу.");
-                        var html = Decode(buffer.ToArray(), response.Content.Headers.ContentType?.CharSet);
+                        var bytes = await ReadPageBytesAsync(stream, timeout.Token).ConfigureAwait(false);
+                        if (bytes.Length == 0) throw new HttpRequestException("Сайт вернул пустую страницу.");
+                        var html = Decode(bytes, response.Content.Headers.ContentType?.CharSet);
                         if (string.IsNullOrWhiteSpace(html)) throw new HttpRequestException("Сайт вернул пустую страницу.");
                         return (html, actual);
                     }
@@ -350,6 +361,19 @@ public sealed partial class SefanSource : IStorySource, IPagedBookSource
             }
         }
         throw new HttpRequestException("Не удалось загрузить страницу.");
+    }
+
+    private static async Task<byte[]> ReadPageBytesAsync(Stream stream, CancellationToken token)
+    {
+        using var buffer = new MemoryStream();
+        var bytes = new byte[81920];
+        while (true)
+        {
+            var read = await stream.ReadAsync(bytes, token).ConfigureAwait(false);
+            if (read == 0) return buffer.ToArray();
+            if (buffer.Length + read > MaxResponseBytes) throw new InvalidDataException("Страница превышает 4 МиБ.");
+            buffer.Write(bytes, 0, read);
+        }
     }
 
     private static string Decode(byte[] bytes, string? declared)

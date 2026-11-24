@@ -81,7 +81,17 @@
       <Label Content="Адрес страницы для продолжения" Foreground="{StaticResource MutedBrush}" Target="{Binding ElementName=RecoveryPageInput}" Margin="0,4,0,0" Padding="0,2"/>
       <TextBox x:Name="RecoveryPageInput" IsEnabled="{Binding CanEditSettings}"/>
       <TextBlock x:Name="RecoveryError" Foreground="#FF9F9F" TextWrapping="Wrap"/>
-      <Button x:Name="UseRecoveryPageButton" Content="Принять адрес" HorizontalAlignment="Left" Click="OnUseRecoveryPage" IsEnabled="{Binding CanEditSettings}"/>
+      <WrapPanel>
+       <Button x:Name="UseRecoveryPageButton" Content="Принять адрес" Click="OnUseRecoveryPage" IsEnabled="{Binding CanEditSettings}"/>
+       <StackPanel Orientation="Horizontal" IsEnabled="{Binding CanEditSettings}">
+        <StackPanel.Style>
+         <Style TargetType="StackPanel"><Style.Triggers><DataTrigger Binding="{Binding CanImportRecoveryPage}" Value="False"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style>
+        </StackPanel.Style>
+        <Button Content="Открыть в браузере" Click="OnOpenRecoveryPage"/>
+        <Button x:Name="ImportRecoveryPageButton" Content="Добавить HTML…" Click="OnImportRecoveryPage"
+                ToolTip="Сохраните HTML страницы чтения в браузере и выберите этот файл."/>
+       </StackPanel>
+      </WrapPanel>
      </StackPanel>
      <Expander Grid.Row="4" Header="Журнал" Foreground="#EEF1F8" Margin="0,12,0,0">
       <StackPanel>

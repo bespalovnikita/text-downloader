@@ -29,6 +29,7 @@ internal static class Program
             ("HTTP redirects and age forms allow only same-story page aliases", AliasTransportScope),
             ("Sefan HTTP 307 preserves the location and the age-confirmation POST", TemporaryRedirectAsync),
             ("A non-reading redirect leaves the verified prefix reusable", RedirectOutsideReadingAsync),
+            ("Saved browser HTML fills a redirected page and resumes with the next page", ImportSavedPageAsync),
             ("Scope fallback retries neutral genre once without mixing partial text", NeutralGenreFallback),
             ("Neutral genre fallback preserves adult permission and non-scope failures", FallbackScopeAndPermission),
             ("HTTP page spacing is configurable and cancellable", PageSpacing),
@@ -308,6 +309,70 @@ internal static class Program
             CancellationToken.None, new DownloadRecovery(checkpoint, null));
         Sequence(new[] { PageUrl(21) }, retryHandler.RequestUris);
         Equal(total, result.PageCount);
+    }
+
+    private static async Task ImportSavedPageAsync()
+    {
+        using var folder = new TemporaryDirectory();
+        const int total = 22;
+        var responses = Enumerable.Range(1, 20).Select(number =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(PageHtml($"Тестовая страница {number}.<br>", number + 1, total))
+            }).Append(new HttpResponseMessage(HttpStatusCode.TemporaryRedirect)
+            {
+                Headers = { Location = new Uri("/immortal/", UriKind.Relative) }
+            }).ToArray();
+
+        DownloadCheckpoint? checkpoint = null;
+        using (var handler = new SequenceHandler(responses))
+        using (var http = new HttpClient(handler))
+        using (var source = new SefanSource(http, TimeSpan.Zero))
+        {
+            await ThrowsAsync<InvalidDataException>(() => new StoryDownloader(source, folder.Path).DownloadAsync(
+                Source, false, false, new InlineProgress(progress => checkpoint = progress.Checkpoint ?? checkpoint),
+                CancellationToken.None));
+            Sequence(Enumerable.Range(1, 21).Select(PageUrl), handler.RequestUris);
+        }
+        Equal(PageUrl(20), checkpoint?.LastSuccessfulPageUrl);
+        Equal(PageUrl(21), checkpoint?.PendingPageUrl);
+
+        using var retryHandler = new SequenceHandler(PageHtml("Тестовая страница 22.", total: total));
+        using var retryHttp = new HttpClient(retryHandler);
+        using var registry = new SupportedStorySource(sefan: new SefanSource(retryHttp, TimeSpan.Zero));
+        var downloader = new StoryDownloader(registry, folder.Path);
+        string BrowserHtml(Uri canonical, string fragment, int pages = total) => PageHtml(fragment, 22, pages)
+            .Replace("</head>", $"<link rel='canonical' href='{canonical}'><meta property='og:url' content='{Source}'></head>");
+        async Task<StoryPage> ImportAsync(string html)
+        {
+            using var stream = new MemoryStream(Encoding.UTF8.GetBytes(html));
+            return await downloader.ImportSavedPageAsync(checkpoint!, stream, CancellationToken.None);
+        }
+
+        await ThrowsAsync<InvalidDataException>(() => ImportAsync(BrowserHtml(PageUrl(20), "Страница не совпадает.")));
+        await ThrowsAsync<InvalidDataException>(() => ImportAsync(BrowserHtml(
+            new Uri(PageUrl(21).AbsoluteUri.Replace("test-story", "another-story")), "Другой рассказ.")));
+        await ThrowsAsync<InvalidDataException>(() => ImportAsync(PageHtml("Адрес отсутствует.", 22, total)));
+        await ThrowsAsync<InvalidDataException>(() => ImportAsync(BrowserHtml(PageUrl(21), "Тестовая страница 20.<br>")));
+        await ThrowsAsync<InvalidDataException>(() => ImportAsync(BrowserHtml(PageUrl(21), "Число страниц изменилось.", 23)));
+
+        string savedHtml = BrowserHtml(PageUrl(21), "Страница из браузера.<script>throw new Error('Synthetic script')</script><br>");
+        string truncatedHtml = savedHtml[..savedHtml.IndexOf("</div>", StringComparison.Ordinal)];
+        await ThrowsAsync<InvalidDataException>(() => ImportAsync(truncatedHtml));
+        using var emptyCache = new TemporaryDirectory();
+        using var savedStream = new MemoryStream(Encoding.UTF8.GetBytes(savedHtml));
+        await ThrowsAsync<InvalidDataException>(() => new StoryDownloader(registry, emptyCache.Path).ImportSavedPageAsync(
+            checkpoint!, savedStream, CancellationToken.None));
+
+        var imported = await ImportAsync(savedHtml);
+        Equal(PageUrl(21), imported.Url);
+        Equal(PageUrl(22), imported.NextUrl);
+        Equal(0, retryHandler.RequestUris.Count);
+        var book = await downloader.DownloadAsync(Source, false, false, null, CancellationToken.None,
+            new DownloadRecovery(checkpoint, null));
+        Sequence(new[] { PageUrl(22) }, retryHandler.RequestUris);
+        Equal(total, book.PageCount);
+        Equal("Страница из браузера.", book.Paragraphs[20]);
     }
 
     private static async Task NeutralGenreFallback()

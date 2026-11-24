@@ -23,6 +23,7 @@ internal static class Program
                 await RunScenariosAsync();
                 await CacheCleanupUiTests.RunAsync(Path.Combine(Root, "cache-cleanup"));
                 await ManualRecoveryAsync();
+                await SavedPageRecoveryAsync();
                 await UpdateUiTests.RunAsync(Path.Combine(Root, "updates"));
                 await BestweaponUiTests.RunAsync(Path.Combine(Root, "bestweapon"));
                 Console.WriteLine("PASS: real WPF add/preview/pause/resume/cancel/retry/export/history/restore/corrupt-profile scenarios");
@@ -243,6 +244,50 @@ internal static class Program
         await CloseAsync(restored);
     }
 
+    private static async Task SavedPageRecoveryAsync()
+    {
+        const string first = "https://sefan.ru/stories/ru/2/drama/saved-recovery_1.html";
+        const string second = "https://sefan.ru/stories/ru/2/drama/saved-recovery_1-2.html";
+        string profile = Path.Combine(Root, "saved-recovery-profile");
+        var network = new FakeNetwork { FailedPage = second };
+        var window = new MainWindow(profile, () => new FakeSource(network), enableTray: false);
+        window.Show();
+        await window.Ready.WaitAsync(TimeSpan.FromSeconds(10));
+        window.OutputDirectory = Path.Combine(Root, "saved-recovery-books");
+        await window.AddUrlsAsync(first);
+        await window.ActivePreview.WaitAsync(TimeSpan.FromSeconds(10));
+        await window.StartAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        var importButton = (Button)window.FindName("ImportRecoveryPageButton");
+        Assert(importButton.IsVisible && importButton.IsEnabled, "HTML import is unavailable after a failed page");
+
+        string htmlPath = Path.Combine(Root, "saved-page.txt");
+        string Page(string address) => $"""
+            <html><head><link rel="canonical" href="{address}"></head>
+            <body><h1>Тестовый рассказ</h1><div id="rsz"> и странице из браузера.</div>
+            <span class="but">Далее</span></body></html>
+            """;
+        await File.WriteAllTextAsync(htmlPath, Page(first));
+        await window.ImportRecoveryPageAsync(htmlPath).WaitAsync(TimeSpan.FromSeconds(10));
+        Assert(window.Items[0].Status == QueueStatus.Failed && ((TextBlock)window.FindName("RecoveryError")).Text.Length > 0,
+            "A wrong saved page replaced the checkpoint");
+
+        await File.WriteAllTextAsync(htmlPath, Page(second));
+        await window.ImportRecoveryPageAsync(htmlPath).WaitAsync(TimeSpan.FromSeconds(10));
+        Assert(window.Items[0].Status == QueueStatus.Queued && window.Items[0].Checkpoint?.LastSuccessfulPageUrl == new Uri(second),
+            "An imported page did not advance the checkpoint");
+        int firstPageCalls = network.PageOneCalls;
+        await CloseAsync(window);
+
+        var restored = new MainWindow(profile, () => new FakeSource(network), enableTray: false);
+        restored.Show();
+        await restored.Ready.WaitAsync(TimeSpan.FromSeconds(10));
+        await restored.StartAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        Assert(restored.Items[0].Status == QueueStatus.Completed && restored.History.Count == 1 && restored.History[0].Pages == 2,
+            "The saved page did not survive an application restart and export");
+        Assert(network.PageOneCalls == firstPageCalls, "Export requested the cached first page again");
+        await CloseAsync(restored);
+    }
+
     private static void Click(MainWindow window, string name)
     {
         var button = (Button)window.FindName(name);
@@ -297,6 +342,9 @@ internal static class Program
         public int? GetPageNumber(Uri uri) => _urls.GetPageNumber(uri);
         public Uri ValidatePageRoute(Uri first, Uri candidate, int? number) => _urls.ValidatePageRoute(first, candidate, number);
         public Uri ValidateReplacementPage(Uri expected, Uri candidate) => _urls.ValidateReplacementPage(expected, candidate);
+        public bool CanImportSavedPage(Uri uri) => _urls.CanImportSavedPage(uri);
+        public Task<StoryPage> ReadSavedPageAsync(Uri expected, Stream html, CancellationToken token) =>
+            _urls.ReadSavedPageAsync(expected, html, token);
         public async Task<StoryPage> GetPageAsync(Uri uri, bool confirmAdult, CancellationToken cancellationToken)
         {
             if (uri.AbsoluteUri == network.FailedPage) throw new IOException("Synthetic connection failure");

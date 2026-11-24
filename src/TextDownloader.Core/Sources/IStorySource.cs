@@ -12,6 +12,10 @@ public interface IStorySource : IDisposable
     string DescribePreview(StoryPage page) => "Начало текста. Файлы появятся после завершения загрузки.";
 
     bool CanRecover(Uri uri) => CanHandle(uri);
+    bool CanImportSavedPage(Uri uri) => false;
+
+    Task<StoryPage> ReadSavedPageAsync(Uri expected, Stream html, CancellationToken token) =>
+        throw new NotSupportedException("Загрузка из HTML для этого адреса недоступна.");
 
     Uri ValidateReplacementPage(Uri expected, Uri candidate)
     {

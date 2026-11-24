@@ -76,6 +76,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (!Set(ref _recoveryItem, value)) return;
             RecoveryPageInput.Text = value?.Checkpoint?.PendingPageUrl?.AbsoluteUri ?? "";
             RecoveryError.Text = "";
+            Changed(nameof(CanImportRecoveryPage));
+        }
+    }
+
+    public bool CanImportRecoveryPage
+    {
+        get
+        {
+            if (RecoveryItem?.Checkpoint?.PendingPageUrl is not { } pending || !_store.CanWrite) return false;
+            using IStorySource source = _sourceFactory(_settings.GetPageDelay(), null);
+            return source.CanImportSavedPage(pending);
         }
     }
 
@@ -577,6 +588,74 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Log($"Адрес для продолжения принят · {item.ReplacementPageUrl}", item: item);
         CurrentStatus = "Нажмите «Скачать очередь», чтобы продолжить.";
         await SaveSafelyAsync();
+    }
+
+    private void OnOpenRecoveryPage(object sender, RoutedEventArgs e)
+    {
+        if (!CanEditSettings || !CanImportRecoveryPage || RecoveryItem?.Checkpoint?.PendingPageUrl is not { } url) return;
+        try { Process.Start(new ProcessStartInfo(url.AbsoluteUri) { UseShellExecute = true }); }
+        catch (Win32Exception error) { RecoveryError.Text = "Не удалось открыть браузер. " + error.Message; }
+    }
+
+    private async void OnImportRecoveryPage(object sender, RoutedEventArgs e)
+    {
+        if (!CanEditSettings || !CanImportRecoveryPage) return;
+        var picker = new OpenFileDialog
+        {
+            Title = "HTML страницы чтения", Filter = "HTML страницы (*.html;*.htm;*.txt)|*.html;*.htm;*.txt",
+            CheckFileExists = true
+        };
+        if (picker.ShowDialog(this) == true) await ImportRecoveryPageAsync(picker.FileName);
+    }
+
+    internal async Task ImportRecoveryPageAsync(string path)
+    {
+        if (!CanEditSettings || !CanImportRecoveryPage || RecoveryItem is not { Checkpoint: { } checkpoint } item) return;
+        string cache = _cache.For(item);
+        TimeSpan delay = _settings.GetPageDelay();
+        _sessionStop?.Dispose();
+        _sessionStop = new CancellationTokenSource();
+        IsBusy = true;
+        RecoveryError.Text = "";
+        CurrentStatus = "Проверяем HTML страницы…";
+        _sessionTask = ImportAsync(_sessionStop.Token);
+        await _sessionTask;
+
+        async Task ImportAsync(CancellationToken token)
+        {
+            try
+            {
+                var page = await Task.Run(async () =>
+                {
+                    using IStorySource source = _sourceFactory(delay, null);
+                    var downloader = new StoryDownloader(source, cache);
+                    await using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
+                        bufferSize: 8192, useAsync: true);
+                    return await downloader.ImportSavedPageAsync(checkpoint, file, token);
+                }, token);
+                if (!Items.Contains(item)) return;
+                item.Checkpoint = checkpoint with { LastSuccessfulPageUrl = page.Url, PendingPageUrl = page.NextUrl };
+                item.CompletedPages++;
+                item.ReplacementPageUrl = null;
+                item.ResumeDownload = true;
+                item.Status = QueueStatus.Queued;
+                item.Message = $"Страница {page.Number} добавлена из HTML.";
+                Log(item.Message, item: item);
+                CurrentStatus = "Нажмите «Скачать очередь», чтобы продолжить.";
+                await SaveSafelyAsync();
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                CurrentStatus = "Импорт HTML остановлен.";
+            }
+            catch (Exception error)
+            {
+                if (RecoveryItem == item) RecoveryError.Text = error.Message;
+                CurrentStatus = "Не удалось добавить HTML. " + error.Message;
+                Log(CurrentStatus, DownloadLogLevel.Warning, item);
+            }
+            finally { IsBusy = false; }
+        }
     }
 
     private void OnRepeatSelected(object sender, RoutedEventArgs e)
