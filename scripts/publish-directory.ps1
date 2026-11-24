@@ -26,7 +26,7 @@ if (Test-Path -LiteralPath $Directory) {
 & dotnet publish (Join-Path $root 'src/TextDownloader/TextDownloader.csproj') -c $Configuration -r win-x64 --self-contained true `
     "-p:Version=$Version" "-p:FileVersion=$Version.0" "-p:AssemblyVersion=$Version.0" `
     -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
-    -p:DebugType=None -p:DebugSymbols=false -o $Directory
+    -p:PublishReferencesDocumentationFiles=false -p:DebugType=None -p:DebugSymbols=false -o $Directory
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish: код завершения $LASTEXITCODE" }
 foreach ($name in @('README.md', 'THIRD_PARTY_NOTICES.md')) {
     Copy-Item -LiteralPath (Join-Path $root $name) -Destination (Join-Path $Directory $name)
