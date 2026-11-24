@@ -14,6 +14,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="TextDownloader.UiTests" />
     <InternalsVisibleTo Include="TextDownloader.UpdateProcessTests" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3124.44" />
     <ProjectReference Include="../TextDownloader.Core/TextDownloader.Core.csproj" />
     <Content Include="../../assets/app.ico" Link="assets/app.ico" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
   </ItemGroup>

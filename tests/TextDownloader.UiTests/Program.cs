@@ -4,6 +4,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Xml.Linq;
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.Wpf;
 using TextDownloader;
 using TextDownloader.Core;
 
@@ -24,6 +26,7 @@ internal static class Program
                 await CacheCleanupUiTests.RunAsync(Path.Combine(Root, "cache-cleanup"));
                 await ManualRecoveryAsync();
                 await SavedPageRecoveryAsync();
+                await BrowserReadingAsync();
                 await UpdateUiTests.RunAsync(Path.Combine(Root, "updates"));
                 await BestweaponUiTests.RunAsync(Path.Combine(Root, "bestweapon"));
                 Console.WriteLine("PASS: real WPF add/preview/pause/resume/cancel/retry/export/history/restore/corrupt-profile scenarios");
@@ -286,6 +289,40 @@ internal static class Program
             "The saved page did not survive an application restart and export");
         Assert(network.PageOneCalls == firstPageCalls, "Export requested the cached first page again");
         await CloseAsync(restored);
+    }
+
+    private static async Task BrowserReadingAsync()
+    {
+        const string host = "sefan.ru";
+        var address = new Uri($"https://{host}/stories/ru/2/drama/browser-recovery_1-22.html");
+        string site = Path.Combine(Root, "browser-site");
+        string document = Path.Combine(site, "stories", "ru", "2", "drama", "browser-recovery_1-22.html");
+        Directory.CreateDirectory(Path.GetDirectoryName(document)!);
+        await File.WriteAllTextAsync(document, $"""
+            <!doctype html><html><head><meta charset="utf-8"><link rel="canonical" href="{address}"></head>
+            <body><h1>Тестовый рассказ</h1><div id="rsz">Страница 22 из встроенного браузера.</div>
+            <span class="but">Далее</span></body></html>
+            """);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+        var browser = new ReadingBrowserWindow(Path.Combine(Root, "browser-profile"));
+        browser.Show();
+        try
+        {
+            try { await browser.InitializeBrowserAsync(timeout.Token); }
+            catch (WebView2RuntimeNotFoundException)
+            {
+                Console.WriteLine("SKIP: Edge WebView2 Runtime is not installed on the Windows runner.");
+                return;
+            }
+            var webView = (WebView2)browser.FindName("PageView");
+            webView.CoreWebView2.SetVirtualHostNameToFolderMapping(host, site, CoreWebView2HostResourceAccessKind.DenyCors);
+            using var source = new SefanSource(browser: browser.ReadPageAsync);
+            var page = await source.GetPageAsync(address, false, timeout.Token);
+            Assert(page.Url == address && page.Number == 22 && page.TotalPages == 22 &&
+                page.Fragment.Contains("Страница 22 из встроенного браузера."), "WebView2 did not return the verified browser page");
+            Console.WriteLine("PASS: embedded WebView2 fetched and validated an offline numbered page");
+        }
+        finally { browser.Close(); }
     }
 
     private static void Click(MainWindow window, string name)

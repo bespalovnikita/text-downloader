@@ -18,21 +18,27 @@ public sealed class SupportedStorySource : IBookStorySource
 
     public static Func<TimeSpan, IProgress<DownloadLogEvent>?, IStorySource> CreateLoggedFactory()
     {
-        // Register new sources here. Each source retains its own request interval state
-        // across its previews and downloads.
-        Func<TimeSpan, IProgress<DownloadLogEvent>?, IStorySource>[] entries =
-        [
-            WithThrottle((interval, throttle, log) => new SefanSource(null, interval, throttle, log)),
-            WithThrottle((interval, throttle, log) => new BestweaponSource(null, interval, throttle, log)),
-        ];
-        return (interval, log) => new SupportedStorySource(entries.Select(create => create(interval, log)));
+        var create = CreateSessionFactory();
+        return (interval, log) => create(interval, log, null);
     }
 
-    private static Func<TimeSpan, IProgress<DownloadLogEvent>?, IStorySource> WithThrottle(
-        Func<TimeSpan, PageRequestThrottle, IProgress<DownloadLogEvent>?, IStorySource> create)
+    public static Func<TimeSpan, IProgress<DownloadLogEvent>?, BrowserPageReader?, IStorySource> CreateSessionFactory()
+    {
+        // Register new sources here. Each source retains its own request interval state
+        // across its previews and downloads.
+        Func<TimeSpan, IProgress<DownloadLogEvent>?, BrowserPageReader?, IStorySource>[] entries =
+        [
+            WithThrottle((interval, throttle, log, browser) => new SefanSource(null, interval, throttle, log, browser)),
+            WithThrottle((interval, throttle, log, _) => new BestweaponSource(null, interval, throttle, log)),
+        ];
+        return (interval, log, browser) => new SupportedStorySource(entries.Select(create => create(interval, log, browser)));
+    }
+
+    private static Func<TimeSpan, IProgress<DownloadLogEvent>?, BrowserPageReader?, IStorySource> WithThrottle(
+        Func<TimeSpan, PageRequestThrottle, IProgress<DownloadLogEvent>?, BrowserPageReader?, IStorySource> create)
     {
         var throttle = new PageRequestThrottle();
-        return (interval, log) => create(interval, throttle, log);
+        return (interval, log, browser) => create(interval, throttle, log, browser);
     }
 
     public bool CanHandle(Uri uri) => _sources.Any(source => source.CanHandle(uri));
