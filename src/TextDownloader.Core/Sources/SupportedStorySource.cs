@@ -37,7 +37,13 @@ public sealed class SupportedStorySource : IBookStorySource
 
     public bool CanHandle(Uri uri) => _sources.Any(source => source.CanHandle(uri));
     public bool CanRecover(Uri uri) => _sources.Any(source => source.CanRecover(uri));
+    public bool CanImportSavedPage(Uri uri) => _sources.Any(source => source.CanImportSavedPage(uri));
     public Uri NormalizeToFirstPage(Uri uri) => SourceFor(uri).NormalizeToFirstPage(uri);
+    public int? GetPageNumber(Uri uri) => SourceFor(uri).GetPageNumber(uri);
+    public Uri ValidatePageRoute(Uri first, Uri candidate, int? expectedNumber) =>
+        SourceFor(first).ValidatePageRoute(first, candidate, expectedNumber);
+    public Task<StoryPage> ReadSavedPageAsync(Uri expected, Stream html, CancellationToken token) =>
+        SourceFor(expected).ReadSavedPageAsync(expected, html, token);
     public StorySourceInfo Describe(Uri uri) => SourceFor(uri).Describe(uri);
     public string DescribePreview(StoryPage page) => SourceFor(page.Url).DescribePreview(page);
     public Uri? GetAlternateStart(Uri uri, Exception? error = null) =>
