@@ -168,7 +168,11 @@ internal sealed class PublicFictionSource : IBookStorySource
 
     private async Task<Index> ReadIndexAsync(Uri url, CancellationToken token)
     {
-        var document = await ReadStoryAsync(url, token).ConfigureAwait(false);
+        var indexUrl = _site.ContentsPath is { } route
+            ? new Uri(url, _site.Work(url).Result(route))
+            : url;
+        ValidatePageRoute(url, indexUrl, null);
+        var document = await ReadStoryAsync(indexUrl, token).ConfigureAwait(false);
         var html = document.Html;
         string title = Text(html.DocumentNode.SelectSingleNode(_site.WorkTitle));
         if (title.Length == 0) throw new InvalidDataException("Не найдено название произведения " + _site.Name + ".");
