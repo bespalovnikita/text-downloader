@@ -18,7 +18,7 @@ internal static partial class PublicFictionSites
             QueryIsRoute = true,
             WorkTitle = "//h3[font/a[contains(@href,'viewuser.php')]]/text()[normalize-space()][1]",
             ChapterTitle = "//h3[font/a[contains(@href,'viewuser.php')]]/text()[normalize-space()][1]",
-            Contents = "//a[contains(@href,'&chapter=') and not(contains(@href,'&textsize=')) and not(contains(@href,'action='))]",
+            Contents = "//a[contains(@href,'chapter=') and not(contains(@href,'textsize=')) and not(contains(@href,'action='))]",
             AllowStandalone = "//span[@style='font-size: 100%;']",
             WorkFromChapter = "/viewstory.php?sid=${work}"
         },
@@ -30,7 +30,9 @@ internal static partial class PublicFictionSites
             QueryIsRoute = true,
             WorkTitle = "//title",
             ChapterTitle = "//title",
-            AllowStandalone = "//article[not(//select[@name='sid']/option[2])]"
+            Contents = "//select[@name='sid']/option[contains(@value,'viewstory.php')]",
+            ContentsDefinesChapterMembership = true,
+            AllowStandalone = "//article"
         },
         new("Star Trek Fan Fiction", "https://trekfanfiction.net/category/the-next-generation/", "trekfanfiction.net",
             @"/(?<work>(?!(?:category|tag|dtremel|wp-admin|wp-content)/)[a-z0-9-]+/[a-z0-9-]+)/?", "(?!)",
@@ -62,11 +64,11 @@ internal static partial class PublicFictionSites
             QueryIsRoute = true,
             WorkTitle = "//title",
             ChapterTitle = "//title",
-            Contents = "//*[@id='output']//a[contains(@href,'&chapter=') and not(contains(@href,'action=')) " +
-                "and not(contains(@href,'&textsize='))] | " +
+            Contents = "//a[contains(@href,'viewstory.php') and contains(@href,'chapter=') and not(contains(@href,'action=')) " +
+                "and not(contains(@href,'textsize='))] | " +
                 "//select[@name='chapter']/option[contains(@value,'viewstory.php')]",
-            NextChapter = "//*[@id='next']/a[@href and contains(@href,'&chapter=')] | " +
-                "//a[@class='next' and contains(@href,'&chapter=')]",
+            NextChapter = "//*[@id='next']/a[@href and contains(@href,'chapter=')] | " +
+                "//a[@class='next' and contains(@href,'chapter=')]",
             AllowStandalone = fiction,
             WorkFromChapter = story + "?sid=${work}"
         };
