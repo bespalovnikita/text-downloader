@@ -55,7 +55,8 @@ internal sealed class PublicFictionSource : IBookStorySource
 
     public Uri ValidatePageRoute(Uri first, Uri candidate, int? expectedNumber)
     {
-        if (CanHandle(first) && CanHandle(candidate) && WorkKey(first) == WorkKey(candidate))
+        if (CanHandle(first) && CanHandle(candidate) && (WorkKey(first) == WorkKey(candidate) ||
+            _site.ContentsDefinesChapterMembership && _site.Chapter(candidate).Success))
             return _site.Normalize(candidate);
         throw new InvalidDataException("Ссылка ведёт за пределы произведения " + _site.Name + ".");
     }

@@ -107,9 +107,17 @@ internal static class PublicFictionTests
         timeout.CancelAfter(TimeSpan.FromSeconds(90));
         try
         {
-            var sample = site.Host == "www.psychfic.com"
-                ? PsychficPublicWorks.Select(id => new Uri($"https://www.psychfic.com/viewstory.php?sid={id}")).ToArray()
-                : (await source.ReadCatalogAsync(timeout.Token)).ToArray();
+            Uri[] sample = site.Host switch
+            {
+                "www.psychfic.com" => PsychficPublicWorks.Select(id => new Uri($"https://www.psychfic.com/viewstory.php?sid={id}")).ToArray(),
+                "secondlifetranslations.com" =>
+                [
+                    new Uri("https://secondlifetranslations.com/novel/oitv/"),
+                    new Uri("https://secondlifetranslations.com/novel/abc/"),
+                    new Uri("https://secondlifetranslations.com/novel/yay/")
+                ],
+                _ => (await source.ReadCatalogAsync(timeout.Token)).ToArray()
+            };
             Require(sample.Length >= 2, "The catalog must supply at least two distinct works.");
             random.Shuffle(sample);
             var failures = new List<string>();
