@@ -67,11 +67,11 @@ internal sealed class PublicFictionSource : IBookStorySource
     {
         var url = NormalizeToFirstPage(uri);
         if (!_site.Work(url).Success)
-            return ParseChapter(await ReadStoryAsync(url, cancellationToken).ConfigureAwait(false), url, 1);
+            return ParseChapter((await ReadStoryAsync(url, cancellationToken).ConfigureAwait(false)).Html, url, 1);
 
         var index = await ReadIndexAsync(url, cancellationToken).ConfigureAwait(false);
-        return index.Start == url ? ParseChapter(index.Html, url, 1, index.Title)
-            : ParseChapter(await ReadStoryAsync(index.Start, cancellationToken).ConfigureAwait(false), index.Start, 1, index.Title);
+        var first = index.Start == url ? index.Document : await ReadStoryAsync(index.Start, cancellationToken).ConfigureAwait(false);
+        return ParseChapter(first.Html, index.Start, 1, index.Title);
     }
 
     public async Task<BookDocument> DownloadBookAsync(Uri url, bool confirmAdult, bool refresh, string cacheDirectory,
@@ -119,9 +119,9 @@ internal sealed class PublicFictionSource : IBookStorySource
                 refresh = true; // Only the checked prefix is reusable.
                 progress?.Report(new DownloadProgress(number - 1, total, $"Получаем главу {number}…")
                     { Checkpoint = new DownloadCheckpoint(work, last, current) });
-                var html = current == work ? index.Html : await ReadStoryAsync(current, cancellationToken).ConfigureAwait(false);
-                page = ParseChapter(html, current, number, index.Title);
-                var subsequent = index.Chapters is not null ? plannedNext : ReadNext(html, work, current);
+                var document = current == work ? index.Document : await ReadStoryAsync(current, cancellationToken).ConfigureAwait(false);
+                page = ParseChapter(document.Html, current, number, index.Title);
+                var subsequent = index.Chapters is not null ? plannedNext : ReadNext(document.Html, work, document.Url);
                 page = page with { NextUrl = subsequent, TotalPages = total ?? (subsequent is null ? number : null) };
                 cacheReader.ValidatePage(page, work, current, number);
                 fingerprint = StoryDownloader.ValidateChainPage(page, total, fingerprints);
@@ -150,13 +150,13 @@ internal sealed class PublicFictionSource : IBookStorySource
     internal async Task<IReadOnlyList<Uri>> ReadCatalogAsync(CancellationToken token)
     {
         var catalog = _site.Catalog;
-        var html = await ReadHtmlAsync(catalog, target => PublicFictionSite.IsWeb(target) &&
+        var document = await ReadHtmlAsync(catalog, target => PublicFictionSite.IsWeb(target) &&
             target.Scheme == Uri.UriSchemeHttps && catalog.IdnHost == target.IdnHost &&
             catalog.AbsolutePath == target.AbsolutePath, token).ConfigureAwait(false);
         var works = new Dictionary<string, Uri>(StringComparer.Ordinal);
-        foreach (var node in Nodes(html.DocumentNode, _site.CatalogLinks))
+        foreach (var node in Nodes(document.Html.DocumentNode, _site.CatalogLinks))
         {
-            if (TryLink(catalog, node, out var link) && _site.Owns(link) && _site.Work(link).Success)
+            if (TryLink(document.Url, node, out var link) && _site.Owns(link) && _site.Work(link).Success)
                 works.TryAdd(WorkKey(link), _site.Normalize(link));
         }
         return works.Values.ToArray();
@@ -166,7 +166,8 @@ internal sealed class PublicFictionSource : IBookStorySource
 
     private async Task<Index> ReadIndexAsync(Uri url, CancellationToken token)
     {
-        var html = await ReadStoryAsync(url, token).ConfigureAwait(false);
+        var document = await ReadStoryAsync(url, token).ConfigureAwait(false);
+        var html = document.Html;
         string title = Text(html.DocumentNode.SelectSingleNode(_site.WorkTitle));
         if (title.Length == 0) throw new InvalidDataException("Не найдено название произведения " + _site.Name + ".");
         var author = _site.Author is { } path ? Text(html.DocumentNode.SelectSingleNode(path)) : null;
@@ -174,26 +175,28 @@ internal sealed class PublicFictionSource : IBookStorySource
         if (_site.ChapterOptions is { } options)
         {
             var chapters = ReadOptions(html, url, options);
-            return new Index(html, title, author, chapters[0], chapters);
+            return new Index(document, title, author, chapters[0], chapters);
         }
         if (_site.Contents is { } contents)
         {
-            var chapters = ReadLinks(html, url, url, contents);
+            var chapters = ReadLinks(html, url, document.Url, contents);
             if (chapters.Count > 0)
             {
                 if (_site.ReverseContents) chapters.Reverse();
-                return new Index(html, title, author, chapters[0], chapters);
+                if (_site.SortContentsByChapterNumber)
+                    chapters = chapters.OrderBy(chapter => ChapterSequence(chapter)).ToList();
+                return new Index(document, title, author, chapters[0], chapters);
             }
         }
         if (_site.FirstChapter is { } first)
         {
-            var chapters = ReadLinks(html, url, url, first);
+            var chapters = ReadLinks(html, url, document.Url, first);
             if (chapters.Count == 1)
-                return new Index(html, title, author, chapters[0], HasFollowLink ? null : chapters);
+                return new Index(document, title, author, chapters[0], HasFollowLink ? null : chapters);
             if (chapters.Count > 1) throw new InvalidDataException("Найдено несколько первых глав.");
         }
         if (_site.AllowStandalone is { } standalone && html.DocumentNode.SelectSingleNode(standalone) is not null)
-            return new Index(html, title, author, url, [url]);
+            return new Index(document, title, author, url, HasFollowLink ? null : [url]);
         throw new InvalidDataException("Не найдено оглавление произведения " + _site.Name + ".");
     }
 
@@ -257,21 +260,21 @@ internal sealed class PublicFictionSource : IBookStorySource
         return new StoryPage(url, number, title, author, text, null, null);
     }
 
-    private async Task<HtmlDocument> ReadStoryAsync(Uri url, CancellationToken token)
+    private async Task<LoadedPage> ReadStoryAsync(Uri url, CancellationToken token)
     {
         bool Matches(Uri target) => CanHandle(target) && target.Scheme == Uri.UriSchemeHttps &&
             ChapterKey(target) == ChapterKey(url);
-        var html = await ReadHtmlAsync(url, Matches, token).ConfigureAwait(false);
-        var canonical = html.DocumentNode.SelectSingleNode("//link[@rel='canonical' and @href]");
+        var document = await ReadHtmlAsync(url, Matches, token).ConfigureAwait(false);
+        var canonical = document.Html.DocumentNode.SelectSingleNode("//link[@rel='canonical' and @href]");
         bool CanonicalMatches(Uri target) => Matches(target) || _site.CanonicalMayIdentifyWork &&
             _site.Owns(target) && target.Scheme == Uri.UriSchemeHttps && _site.Work(target).Success &&
             WorkKey(target) == WorkKey(url);
-        if (canonical is not null && (!TryLink(url, canonical, out var target) || !CanonicalMatches(target)))
+        if (canonical is not null && (!TryLink(document.Url, canonical, out var target) || !CanonicalMatches(target)))
             throw new InvalidDataException("Канонический адрес страницы ведёт к другому произведению или главе.");
-        return html;
+        return document;
     }
 
-    private async Task<HtmlDocument> ReadHtmlAsync(Uri initial, Func<Uri, bool> allowed, CancellationToken token)
+    private async Task<LoadedPage> ReadHtmlAsync(Uri initial, Func<Uri, bool> allowed, CancellationToken token)
     {
         Uri current = initial;
         for (int redirects = 0; redirects <= 4; redirects++)
@@ -312,10 +315,18 @@ internal sealed class PublicFictionSource : IBookStorySource
                     stream.Position = 0;
                     html.Load(stream, declared);
                 }
-                return html;
+                return new LoadedPage(current, html);
             }
         }
         throw new InvalidDataException("Сайт превысил предел перенаправлений.");
+    }
+
+    private int ChapterSequence(Uri url)
+    {
+        var groups = _site.Chapter(url).Groups;
+        if (groups["prologue"].Success) return 0;
+        return int.TryParse(groups["sequence"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out int number)
+            ? number : throw new InvalidDataException("Не удалось подтвердить номер главы в оглавлении.");
     }
 
     private string WorkKey(Uri url)
@@ -364,5 +375,7 @@ internal sealed class PublicFictionSource : IBookStorySource
         if (_ownsClient && _http.IsValueCreated) _http.Value.Dispose();
     }
 
-    private sealed record Index(HtmlDocument Html, string Title, string? Author, Uri Start, IReadOnlyList<Uri>? Chapters);
+    private sealed record LoadedPage(Uri Url, HtmlDocument Html);
+
+    private sealed record Index(LoadedPage Document, string Title, string? Author, Uri Start, IReadOnlyList<Uri>? Chapters);
 }

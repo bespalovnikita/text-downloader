@@ -9,7 +9,7 @@ internal static partial class PublicFictionSites
 
     internal static IEnumerable<PublicFictionSite> All => Batches.SelectMany(batch => batch);
 
-    internal static IReadOnlyList<PublicFictionSite[]> Batches => [FirstBatch, SecondBatch, ThirdBatch];
+    internal static IReadOnlyList<PublicFictionSite[]> Batches => [FirstBatch, SecondBatch, ThirdBatch, FourthBatch];
 
     private static readonly PublicFictionSite[] FirstBatch =
     [
