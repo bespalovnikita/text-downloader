@@ -17,12 +17,15 @@ internal sealed class PublicFictionSite(
     public string ChapterTitle { get; init; } = "//h1[1]";
     public string? Author { get; init; }
     public string? Contents { get; init; }
+    public string? ContentsPath { get; init; }
+    public string? ContentsPageLink { get; init; }
     public string? FirstChapter { get; init; }
     public bool FirstChapterMayUseDifferentSlug { get; init; }
     public string? NextChapter { get; init; }
     public string? ChapterOptions { get; init; }
     public string? ChapterFromOption { get; init; }
     public string? WorkFromChapter { get; init; }
+    public bool WorkMayRedirectToFirstChapter { get; init; }
     public bool QueryIsRoute { get; init; }
     public bool CanonicalMayIdentifyWork { get; init; }
     public bool ReverseContents { get; init; }

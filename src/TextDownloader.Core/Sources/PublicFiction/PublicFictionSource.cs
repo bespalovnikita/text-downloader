@@ -168,12 +168,24 @@ internal sealed class PublicFictionSource : IBookStorySource
 
     private async Task<Index> ReadIndexAsync(Uri url, CancellationToken token)
     {
-        var document = await ReadStoryAsync(url, token).ConfigureAwait(false);
+        var indexUrl = _site.ContentsPath is { } route
+            ? new Uri(url, _site.Work(url).Result(route))
+            : url;
+        ValidatePageRoute(url, indexUrl, null);
+        var document = await ReadStoryAsync(indexUrl, token).ConfigureAwait(false);
         var html = document.Html;
         string title = Text(html.DocumentNode.SelectSingleNode(_site.WorkTitle));
         if (title.Length == 0) throw new InvalidDataException("Не найдено название произведения " + _site.Name + ".");
         var author = _site.Author is { } path ? Text(html.DocumentNode.SelectSingleNode(path)) : null;
         if (author?.Length == 0) author = null;
+        if (_site.ContentsPageLink is { } pageLink && html.DocumentNode.SelectSingleNode(pageLink) is { } link)
+        {
+            if (!TryLink(document.Url, link, out var target) || !_site.Work(target).Success)
+                throw new InvalidDataException("Оглавление содержит недопустимую ссылку на страницу.");
+            var pageDocument = await ReadStoryAsync(ValidatePageRoute(url, target, null), token).ConfigureAwait(false);
+            html = pageDocument.Html;
+            document = pageDocument;
+        }
         if (_site.ChapterOptions is { } options)
         {
             var chapters = ReadOptions(html, url, options);
@@ -289,7 +301,9 @@ internal sealed class PublicFictionSource : IBookStorySource
     private async Task<LoadedPage> ReadStoryAsync(Uri url, CancellationToken token)
     {
         bool Matches(Uri target) => CanHandle(target) && target.Scheme == Uri.UriSchemeHttps &&
-            ChapterKey(target) == ChapterKey(url);
+            (ChapterKey(target) == ChapterKey(url) ||
+                (_site.WorkMayRedirectToFirstChapter && _site.Work(url).Success &&
+                    _site.Chapter(target).Success && WorkKey(target) == WorkKey(url)));
         var document = await ReadHtmlAsync(url, Matches, token).ConfigureAwait(false);
         var canonical = document.Html.DocumentNode.SelectSingleNode("//link[@rel='canonical' and @href]");
         bool CanonicalMatches(Uri target) => Matches(target) || _site.CanonicalMayIdentifyWork &&
