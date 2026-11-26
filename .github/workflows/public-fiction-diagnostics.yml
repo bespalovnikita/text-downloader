@@ -21,35 +21,9 @@ jobs:
           from urllib.error import HTTPError
           from urllib.parse import urljoin, urlsplit
           from urllib.request import Request, urlopen
-          from lxml.html import fromstring
+          from lxml.html import fromstring, HTMLParser
 
-          urls = {
-              "truyendich": "https://truyendich.vn/ky-nguyen-hon-loan-vo-han-tien-hoa-dinh-phong-chuong-1/",
-              "rodovia": "https://rodoviadasnovels.com.br/novels/kc-knight-of-chaos",
-              "rodovia2": "https://rodoviadasnovels.com.br/novels/dc-debaixo-do-carvalho",
-              "novelworld": "https://novelworldtranslations.com/series/my-returned-husband-is-acting-strange/",
-              "athena": "https://athenatls.com/novel/trm-toc/",
-              "athena2": "https://athenatls.com/tswa-vol-2-chapter-1/",
-              "lc": "https://www.lcfanfic.com/noscript/title/a.html",
-              "fanfic": "https://fanfic.es/fanfiction",
-              "fanficpopular": "https://fanfic.es/popular",
-              "ficwad": "https://ficwad.com/",
-              "fringe1": "https://www.fringecapybara.com/mmlb-toc",
-              "fringe2": "https://www.fringecapybara.com/fmf-toc",
-              "fuyu": "https://www.fuyuneko.org/work",
-              "novelpl": "https://www.novels.pl/novel/Reborn-as-the-Doomed-Heir-of-a-Mage-Dynasty",
-              "fictionhunt": "https://fictionhunt.com/stories/72xvx93/norman-schneider-and-the-wands-of-tears",
-              "squidge": "https://squidgeworld.org/works?work_search%5Brating_ids%5D=10",
-              "booknet": "https://booknet.ua/",
-              "litgorod": "https://litgorod.ru/",
-              "tapas": "https://tapas.io/novels",
-              "wattpad": "https://www.wattpad.com/stories/fanfiction",
-              "original": "https://www.wattpad.com/stories/original",
-              "alfa": "https://www.alphapolis.co.jp/novel/520757378/311071871",
-              "ranobe": "https://ranobelib.me/ru/",
-              "readnovel": "https://www.lightnovelworld.com/",
-              "clicknovel": "https://kliknovel.com/",
-          }
+          urls = {'truyenCatalog': 'https://truyendich.vn/danh-sach/truyen-mien-phi/', 'truyenChapter': 'https://truyendich.vn/ky-nguyen-hon-loan-vo-han-tien-hoa-dinh-phong-chuong-1/chuong-1/', 'lcreader': 'https://www.lcfanfic.com/stories/2007/html/almostfi.html', 'lcreader2': 'https://www.lcfanfic.com/stories/1999/html/afore.html', 'ficwadReader': 'https://ficwad.com/story/162133', 'ficwadReader2': 'https://ficwad.com/story/294024', 'ficwadCat': 'https://ficwad.com/category/18', 'fictionCat': 'https://fictionhunt.com/', 'fictionChapter': 'https://fictionhunt.com/stories/72xvx93/norman-schneider-and-the-wands-of-tears/chapters/1', 'fringeCatalog': 'https://www.fringecapybara.com/', 'fringeReader': 'https://www.fringecapybara.com/married-the-male-leads-brother/ch-001', 'fuyu': 'https://www.fuyuneko.org/work', 'fuyu1': 'https://www.fuyuneko.org/vbms/', 'athenacat': 'https://athenatls.com/novels/', 'novelworldChapter': 'https://novelworldtranslations.com/mas-01/', 'novelspl': 'https://www.novels.pl/novel/Reborn-as-the-Doomed-Heir-of-a-Mage-Dynasty?p=1', 'novelspl2': 'https://www.novels.pl/novel/The-Mech-Touch-WN3?p=1', 'fanficEs': 'https://fanfic.es/popular', 'squidge': 'https://squidgeworld.org/works?work_search%5Brating_ids%5D=10', 'booknet': 'https://booknet.ua/book/stanu-tob-tatom-b429253', 'litgorod': 'https://litgorod.ru/books/view/77686', 'wattpad': 'https://www.wattpad.com/stories/fanfiction', 'silmarillion': 'https://www.silmarillionwritersguild.org/', 'adastra': 'https://www.adastrafanfic.com/works', 'phoenix': 'https://www.phoenixsong.net/fanfiction/story/6629/', 'fanficauthors': 'https://www.fanficauthors.net/', 'novelgo': 'https://novelgo.id/', 'novlove': 'https://novel.citcet.com/', 'webtruyen': 'https://webtruyendich.com/truyen/tu-bao-tien-bon', 'royalroad': 'https://www.royalroad.com/fictions/best-rated', 'fanficgarasu': 'https://www.fanficauthors.net/authors/', 'novelcool': 'https://www.novelcool.com/novel/original/id-263564.html', 'dracosite': 'https://www.dracoandginny.com/', 'bloodshed': 'https://www.bloodshedverse.com/', 'firefly': 'https://www.fireflyfans.net/', 'spike': 'https://spikeluver.com/', 'twilighted': 'https://www.twilighted.net/'}
 
           def clean(value, limit=200):
               return " ".join(value.split())[:limit]
@@ -63,7 +37,7 @@ jobs:
                   with urlopen(Request(url, headers={"User-Agent": "TextDownloader/1.0", "Accept": "text/html,application/xhtml+xml"}), timeout=9) as response:
                       response_url = response.geturl()
                       html = response.read(5 * 1024 * 1024)
-                      doc = fromstring(html)
+                      doc = fromstring(html, parser=HTMLParser(encoding="utf8"))
                   text = [f"{name} {response_url} {len(html)} {clean(doc.xpath('string(//title)'))}"]
                   text.append("head " + repr([(describe(h), len(h.text_content())) for h in doc.xpath("//h1|//h2")[:7]]))
                   props = {describe(a):sum(len(p.text_content()) for p in a.xpath("./p")) for a in doc.xpath("//p/parent::* | //div[./br]")}
@@ -82,11 +56,19 @@ jobs:
                           rank += 5
                       if "first" in mark or "chapter-1/" in mark or "starts" in mark or "chuong-1" in mark or "bab-1" in mark or short.lower() == "last" or ".txt" in mark:
                           rank += 4
+                      if short.lower() in ("last", "first", "next", "read", "читать", "читати", "start reading") or "chapter-1/" in mark:
+                          rank += 10
+                      if target.path.startswith(("/story/", "/stories/", "/fiction/", "/works/", "/read/", "/books/read/", "/chapters/", "/reader/", "/novel/", "/obra/", "/fics/", "/fanfic/")) and target.path.strip("/").count("/") > 0:
+                          rank += 10
+                      if name.startswith("novelspl"):
+                          rank = 20 if "p=" in target.query or ".html" in target.path else rank
+                      if name in ("fringeCatalog","fuyu","fuyu1") and any(t in mark for t in ("toc", "/vbms", "/cfm", "/chongfei", "/work", "/chapter")):
+                          rank += 15
                       absolute = target.path + (("?" + target.query) if target.query else "")
                       if absolute in links:
                           continue
                       links[absolute] = (rank, clean(absolute,160), short, describe(node))
-                  text.append("links " + repr([entry[1:] for entry in sorted(links.values(), key=lambda x:-x[0])[:12]]))
+                  text.append("links " + repr([entry[1:] for entry in sorted(links.values(), key=lambda x:-x[0])[:17]]))
                   return "\n".join(text)
               except HTTPError as error:
                   return f"{name} HTTP {error.code} {error.geturl()}"
