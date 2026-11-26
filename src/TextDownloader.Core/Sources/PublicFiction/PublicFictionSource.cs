@@ -178,6 +178,14 @@ internal sealed class PublicFictionSource : IBookStorySource
         if (title.Length == 0) throw new InvalidDataException("Не найдено название произведения " + _site.Name + ".");
         var author = _site.Author is { } path ? Text(html.DocumentNode.SelectSingleNode(path)) : null;
         if (author?.Length == 0) author = null;
+        if (_site.ContentsPageLink is { } pageLink && html.DocumentNode.SelectSingleNode(pageLink) is { } link)
+        {
+            if (!TryLink(document.Url, link, out var target) || !_site.Work(target).Success)
+                throw new InvalidDataException("Оглавление содержит недопустимую ссылку на страницу.");
+            var pageDocument = await ReadStoryAsync(ValidatePageRoute(url, target, null), token).ConfigureAwait(false);
+            html = pageDocument.Html;
+            document = pageDocument;
+        }
         if (_site.ChapterOptions is { } options)
         {
             var chapters = ReadOptions(html, url, options);

@@ -21,25 +21,6 @@ internal static partial class PublicFictionSites
             Contents = "//dl//a[contains(@href,'/chapter/') and @href]",
             WorkFromChapter = "/book/${work}.html"
         },
-        new("RPG Novels", "https://rpgnovels.com/active-projects/", "rpgnovels.com",
-            @"/(?<work>[a-z0-9-]+)/?", @"/(?<work>[a-z0-9-]+?)_ch(?<part>[0-9][a-z0-9.-]*)/?",
-            EntryContent)
-        {
-            CatalogLinks = "//div[contains(@class,'entry-content')]//a[@href]",
-            WorkTitle = "//h1[contains(@class,'wp-block-post-title')]",
-            ChapterTitle = "//h1[contains(@class,'wp-block-post-title')]",
-            FirstChapter = "(//div[contains(@class,'entry-content')]//a[contains(@href,'_ch1/') and @href])[1]",
-            FirstChapterMayUseDifferentSlug = true,
-            NextChapter = "//a[(normalize-space(.)='Next' or starts-with(normalize-space(.),'Next Chapter')) and @href and @href!='#']"
-        },
-        new("Novello", "https://novello.id/", "novello.id",
-            @"/book/(?<work>[a-z0-9-]+)/?", @"/book/(?<work>[a-z0-9-]+)/chapter/(?<part>[0-9]+(?:\.[0-9]+)?)/?",
-            "//div[contains(concat(' ',normalize-space(@class),' '),' reading-text ')]")
-        {
-            FirstChapter = "//a[normalize-space(.)='Mulai Baca' and @href]",
-            NextChapter = "//a[(@rel='next' or contains(@aria-label,'Selanjutnya') or contains(normalize-space(.),'Bab Berikutnya')) and @href]",
-            WorkFromChapter = "/book/${work}"
-        },
         new("Ranahnovel", "https://ranahnovel.com/", "ranahnovel.com",
             @"/novel/(?<work>[a-z0-9-]+)/?", @"/novel/(?<work>[a-z0-9-]+)/(?<part>chapter-[a-z0-9.-]+)/?",
             "//*[@id='chapter-content'] | //div[contains(concat(' ',normalize-space(@class),' '),' chapter-body ')]")
@@ -50,50 +31,68 @@ internal static partial class PublicFictionSites
         },
         new("Novelzhen", "https://novelzhen.com/", "novelzhen.com",
             @"/novel/(?<work>[a-z0-9-]+)/?", @"/novel/(?<work>[a-z0-9-]+)/(?<part>[a-z0-9-]+-chapter-[a-z0-9.-]+)/?",
-            "//*[@id='chapter-content'] | //div[contains(concat(' ',normalize-space(@class),' '),' reader-content ')]")
+            "//div[contains(concat(' ',normalize-space(@class),' '),' chapter-content ')]")
         {
             FirstChapter = "(//a[contains(@href,'-chapter-1') and (normalize-space(.)='Start Reading' or " +
                 "substring(@href,string-length(@href)-9)='-chapter-1') and @href])[1]",
-            NextChapter = "//a[(@rel='next' or normalize-space(.)='Next Chapter') and @href and @href!='#']",
+            NextChapter = "//a[(@rel='next' or normalize-space(.)='Next') and @href and @href!='#']",
             WorkFromChapter = "/novel/${work}"
         },
         new("Novels.pl", "https://www.novels.pl/", "www.novels.pl",
-            @"/novel/(?<work>[A-Za-z0-9-]+)/?", @"/novel/(?<work>[A-Za-z0-9-]+)/(?<part>[0-9]+)/[^/]+\.html",
+            @"/novel/(?<work>[A-Za-z0-9-]+)/?(?:\?p=[0-9]+)?", @"/novel/(?<work>[A-Za-z0-9-]+)/(?<part>[0-9]+)/[^/]+\.html",
             "//*[@id='chapter-content']")
         {
             WorkTitle = "//meta[@property='og:title'] | //title",
             ChapterTitle = "//meta[@property='og:title'] | //title",
+            QueryIsRoute = true,
             ContentsPath = "/novel/${work}?p=1",
-            FirstChapter = "(//table[contains(@class,'listing')]//a[contains(@href,'.html') and contains(@href,'/novel/')])[1]",
+            ContentsPageLink = "//a[normalize-space(.)='Last' and contains(@href,'?p=')]",
+            FirstChapter = "(//table[contains(@class,'listing')]//a[contains(@href,'.html') and contains(@href,'/novel/')])[last()]",
             NextChapter = "//a[normalize-space(.)='Next' and @href and @href!='#']",
             WorkFromChapter = "/novel/${work}"
         },
-        new("Đọc Truyện", "https://dtruyen.com/", "dtruyen.com",
-            @"/(?<work>[a-z0-9-]+)/?", @"/(?<work>[a-z0-9-]+)/(?<part>[a-z0-9-]+_[0-9]+)\.html",
-            "//*[@id='chapter-content']")
-        {
-            CatalogLinks = "//h3/a[@href]",
-            FirstChapter = "(//a[contains(@href,'chuong-1-') and @href])[1]",
-            NextChapter = "//a[contains(concat(' ',normalize-space(@class),' '),' next ') and @href and @href!='#']",
-            WorkFromChapter = "/${work}/"
-        },
-        new("Truyện Full", "https://truyenfull.vision/", "truyenfull.vision",
+        new("TruyenDich", "https://truyendich.vn/danh-sach/truyen-mien-phi/", "truyendich.vn",
             @"/(?<work>[a-z0-9-]+)/?", @"/(?<work>[a-z0-9-]+)/(?<part>chuong-[a-z0-9.-]+)/?",
             "//*[@id='chapter-c']")
         {
-            CatalogLinks = "//h3[contains(@class,'truyen-title')]/a[@href]",
-            WorkTitle = "//h3[contains(@class,'title')] | //h1",
-            ChapterTitle = "//a[contains(@class,'chapter-title')]",
-            FirstChapter = "(//*[@id='list-chapter']//a[@href])[1]",
+            CatalogLinks = "//h3//a[@href] | //a[.//h3]",
+            FirstChapter = "(//a[substring(@href,string-length(@href)-8)='/chuong-1' or " +
+                "substring(@href,string-length(@href)-9)='/chuong-1/'])[1]",
             NextChapter = "//a[@id='next_chap' and @href and @href!='#' and not(contains(@class,'disabled'))]",
             WorkFromChapter = "/${work}/"
         },
-        new("Inkitt", "https://www.inkitt.com/fanfiction", "www.inkitt.com",
-            @"/stories/(?<work>[a-z0-9-]+/[0-9]+)/?", @"/stories/(?<work>[a-z0-9-]+/[0-9]+)/chapters/(?<part>[0-9]+)/?",
-            "//*[@id='chapter-content'] | //div[contains(concat(' ',normalize-space(@class),' '),' chapter-content ')]")
+        new("Novel World Translations", "https://novelworldtranslations.com/az-lists/", "novelworldtranslations.com",
+            @"/series/(?<work>[a-z0-9-]+)/?", @"/(?<work>[a-z0-9-]+?)-(?<part>[a-z0-9-]+)/?",
+            "//div[contains(concat(' ',normalize-space(@class),' '),' epcontent ')]")
         {
-            Contents = "//a[contains(@href,'/chapters/') and @href]",
-            WorkFromChapter = "/stories/${work}"
+            FirstChapter = "(//a[@href and starts-with(normalize-space(.),'First Chapter')])[1]",
+            FirstChapterMayUseDifferentSlug = true,
+            NextChapter = "//a[normalize-space(.)='Next' and @href and @href!='#']"
         },
+        WorksArchive("SquidgeWorld Archive", "squidgeworld.org", "/works?work_search%5Brating_ids%5D=10"),
+        WorksArchive("Ad Astra Star Trek Fanfiction Archive", "www.adastrafanfic.com", "/works"),
+        new("Web Truyện Dịch", "https://webtruyendich.com/tim-truyen?sort=view_all", "webtruyendich.com",
+            @"/truyen/(?<work>[a-z0-9-]+)/?", @"/truyen/(?<work>[a-z0-9-]+)/(?<part>[a-z0-9-]+/chuong-[a-z0-9.-]+)/?",
+            "//*[@id='chapter-content' or @id='chapter-text'] | //div[contains(concat(' ',normalize-space(@class),' '),' chapter-content ')]")
+        {
+            FirstChapter = "//a[@id='read-story-btn' and @href]",
+            NextChapter = "//a[@href and (@id='next-chapter' or @rel='next' or contains(@aria-label,'Chương sau'))]",
+            WorkFromChapter = "/truyen/${work}"
+        }
     ]);
+
+    private static PublicFictionSite WorksArchive(string name, string host, string catalog) =>
+        new(name, "https://" + host + catalog, host, @"/works/(?<work>[0-9]+)/?",
+            @"/works/(?<work>[0-9]+)/chapters/(?<part>[0-9]+)/?",
+            "//*[@id='chapters']//*[contains(concat(' ',normalize-space(@class),' '),' userstuff ') " +
+            "and not(ancestor::*[contains(concat(' ',normalize-space(@class),' '),' notes ')])]")
+        {
+            CatalogLinks = "//h4[contains(@class,'heading')]/a[starts-with(@href,'/works/')]",
+            WorkTitle = "//h2[contains(concat(' ',normalize-space(@class),' '),' title ')]",
+            ChapterTitle = "//*[@id='chapters']//h3[contains(@class,'title')] | //h2[contains(@class,'title')]",
+            Author = "//a[@rel='author']",
+            AllowStandalone = "//*[@id='chapters']",
+            NextChapter = "//li[contains(concat(' ',normalize-space(@class),' '),' next ')]/a[contains(@href,'/chapters/')]",
+            WorkFromChapter = "/works/${work}"
+        };
 }
