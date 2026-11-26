@@ -95,11 +95,14 @@ internal static partial class PublicFictionSites
         },
         new("Chireads", "https://chireads.com/category/translatedtales/", "chireads.com",
             @"/category/translatedtales/(?<work>[^/]+)/?", @"/translatedtales/(?<work>[^/]+)/(?<part>[^/]+/[0-9]{4}/[0-9]{2}/[0-9]{2})/?",
-            "//*[@id='content' and contains(@class,'article-font')]")
+            "//*[@id='content' and contains(@class,'article-font')] | " +
+                "//div[contains(@class,'refresh-reader-content') or contains(@class,'entry-content')]")
         {
-            WorkTitle = "//title",
+            WorkTitle = "//*[@id='refresh-detail-title'] | //title",
             ChapterTitle = "//title",
-            Contents = "//div[@class='chapitre']//a[contains(@href,'/translatedtales/')]",
+            FirstChapter = "//a[contains(concat(' ',normalize-space(@class),' '),' refresh-detail-primary ') and @href]",
+            NextChapter = "//a[@rel='next' and @href and @href!='#'] | " +
+                "//a[starts-with(normalize-space(.),'Chapitre suivant') and @href and @href!='#']",
             WorkFromChapter = "/category/translatedtales/${work}/"
         },
     ]);
