@@ -10,7 +10,6 @@ internal sealed class PublicFictionSite(
 
     public string Name { get; } = name;
     public Uri Catalog { get; } = new(catalog);
-    public Uri? AlternateCatalog { get; init; }
     public string Host { get; } = readingHost;
     public string Content { get; } = content;
     public string CatalogLinks { get; init; } = "//a[@href]";
@@ -19,6 +18,7 @@ internal sealed class PublicFictionSite(
     public string? Author { get; init; }
     public string? Contents { get; init; }
     public string? FirstChapter { get; init; }
+    public bool FirstChapterMayUseDifferentSlug { get; init; }
     public string? NextChapter { get; init; }
     public string? ChapterOptions { get; init; }
     public string? ChapterFromOption { get; init; }
@@ -26,6 +26,7 @@ internal sealed class PublicFictionSite(
     public bool QueryIsRoute { get; init; }
     public bool CanonicalMayIdentifyWork { get; init; }
     public bool ReverseContents { get; init; }
+    public bool ContentsDefinesChapterMembership { get; init; }
     public bool SortContentsByChapterNumber { get; init; }
     public string? AllowStandalone { get; init; }
     public string? ExcludeContent { get; init; }
