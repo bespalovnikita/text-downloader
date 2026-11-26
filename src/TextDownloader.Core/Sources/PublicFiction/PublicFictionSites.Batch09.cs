@@ -78,8 +78,9 @@ internal static partial class PublicFictionSites
         {
             WorkTitle = "//h2[contains(@class,'text-center')] | //title",
             ChapterTitle = "//h2[contains(@class,'text-center')] | //title",
-            Contents = "//main//a[@href and not(contains(@href,'/reviews/')) and not(contains(@href,'/print/')) " +
-                "and not(contains(@href,'/index/')) and contains(@href,'/') and ancestor::ol]",
+            Contents = "//*[@id='main']//a[starts-with(@href,'/') and " +
+                "string-length(@href)-string-length(translate(@href,'/',''))=3 and " +
+                "substring(@href,string-length(@href))='/' and not(contains(@href,'/index/'))]",
             WorkFromChapter = "/${work}/index/"
         }
     ]);
