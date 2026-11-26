@@ -24,42 +24,31 @@ jobs:
           from lxml.html import fromstring
 
           urls = {
-              "sfchapter": "https://book.sfacg.com/Novel/785681/1044447/9954155/",
-              "17kchapter": "https://www.17k.com/chapter/3684636/50657210.html",
-              "lcp": "https://exiledrebelsscanlations.com/mary-sue-chapter-1/",
-              "novellochapter": "https://novello.id/book/the-early-spring/chapter/1",
-              "ranahchapter": "https://ranahnovel.com/novel/reverend-insanity/chapter-1",
-              "zhenchapter": "https://novelzhen.com/novel/reverend-insanity/reverend-insanity-chapter-1",
-              "rpgchapter": "https://rpgnovels.com/villagebuilding_ch1/",
-              "booknet": "https://booknet.com/ru",
-              "fringe": "https://www.fringecapybara.com/",
-              "fuyu": "https://www.fuyuneko.org/",
-              "dtruyen": "https://dtruyen.com/",
-              "sstruyen": "https://sstruyen.vn/",
-              "truyenyy": "https://truyenyy.vip/",
-              "truyenhdx": "https://truyenhdx.com/",
-              "trumtruyen": "https://trumtruyen.vn/",
-              "metruyen": "https://metruyenchu.com.vn/",
-              "truyendich": "https://truyendich.vn/",
-              "tangthuvien": "https://tangthuvien.net/",
-              "author": "https://author.today/",
-              "litgorod": "https://litgorod.ru/catalog",
-              "rodovia": "https://rodoviadasnovels.com.br/",
-              "abismo": "https://abismonovel.com.br/",
-              "novelworld": "https://novelworldtranslations.com/",
-              "athena": "https://athenatls.com/",
-              "novelrealm": "https://novelrealm.com/",
-              "lc": "https://www.lcfanfic.com/",
-              "fanficw": "https://ficwad.com/story/162133",
-              "fanficauth": "https://www.fanficauthors.net/",
-              "fictionspain": "https://www.fanfic.es/",
-              "wtrlab": "https://wtr-lab.com/",
-              "fictionpost": "https://fiction.live/",
-              "squidge": "https://squidgeworld.org/works",
-              "archive": "https://archiveofourown.org/works/search",
-              "novelbin": "https://novelbin.com/",
-              "cnovels": "https://cnovels.com/",
-              "klikt": "https://kliknovel.com/",
+              "truyendich": "https://truyendich.vn/ky-nguyen-hon-loan-vo-han-tien-hoa-dinh-phong-chuong-1/",
+              "rodovia": "https://rodoviadasnovels.com.br/novels/kc-knight-of-chaos",
+              "rodovia2": "https://rodoviadasnovels.com.br/novels/dc-debaixo-do-carvalho",
+              "novelworld": "https://novelworldtranslations.com/series/my-returned-husband-is-acting-strange/",
+              "athena": "https://athenatls.com/novel/trm-toc/",
+              "athena2": "https://athenatls.com/tswa-vol-2-chapter-1/",
+              "lc": "https://www.lcfanfic.com/noscript/title/a.html",
+              "fanfic": "https://fanfic.es/fanfiction",
+              "fanficpopular": "https://fanfic.es/popular",
+              "ficwad": "https://ficwad.com/",
+              "fringe1": "https://www.fringecapybara.com/mmlb-toc",
+              "fringe2": "https://www.fringecapybara.com/fmf-toc",
+              "fuyu": "https://www.fuyuneko.org/work",
+              "novelpl": "https://www.novels.pl/novel/Reborn-as-the-Doomed-Heir-of-a-Mage-Dynasty",
+              "fictionhunt": "https://fictionhunt.com/stories/72xvx93/norman-schneider-and-the-wands-of-tears",
+              "squidge": "https://squidgeworld.org/works?work_search%5Brating_ids%5D=10",
+              "booknet": "https://booknet.ua/",
+              "litgorod": "https://litgorod.ru/",
+              "tapas": "https://tapas.io/novels",
+              "wattpad": "https://www.wattpad.com/stories/fanfiction",
+              "original": "https://www.wattpad.com/stories/original",
+              "alfa": "https://www.alphapolis.co.jp/novel/520757378/311071871",
+              "ranobe": "https://ranobelib.me/ru/",
+              "readnovel": "https://www.lightnovelworld.com/",
+              "clicknovel": "https://kliknovel.com/",
           }
 
           def clean(value, limit=200):
@@ -91,7 +80,7 @@ jobs:
                       mark = " ".join((path, short, node.get("id",""), node.get("class",""))).lower()
                       if any(k in mark for k in signals):
                           rank += 5
-                      if "first" in mark or "chapter-1/" in mark or "starts" in mark or "chuong-1" in mark or "bab-1" in mark:
+                      if "first" in mark or "chapter-1/" in mark or "starts" in mark or "chuong-1" in mark or "bab-1" in mark or short.lower() == "last" or ".txt" in mark:
                           rank += 4
                       absolute = target.path + (("?" + target.query) if target.query else "")
                       if absolute in links:
