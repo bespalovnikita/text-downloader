@@ -94,13 +94,13 @@ internal static partial class PublicFictionSites
             WorkFromChapter = "/novel/${work}/"
         },
         new("Chireads", "https://chireads.com/category/translatedtales/", "chireads.com",
-            @"/translatedtales/(?<work>[^/]+)/?", @"/translatedtales/(?<work>[^/]+)/(?<part>[^/]+/[0-9]{4}/[0-9]{2}/[0-9]{2})/?",
+            @"/category/translatedtales/(?<work>[^/]+)/?", @"/translatedtales/(?<work>[^/]+)/(?<part>[^/]+/[0-9]{4}/[0-9]{2}/[0-9]{2})/?",
             "//*[@id='content' and contains(@class,'article-font')]")
         {
             WorkTitle = "//h3[contains(@class,'inform-title')]",
             ChapterTitle = "//title",
             Contents = "//div[@class='chapitre']//a[contains(@href,'/translatedtales/')]",
-            WorkFromChapter = "/translatedtales/${work}/"
+            WorkFromChapter = "/category/translatedtales/${work}/"
         },
     ]);
 }
