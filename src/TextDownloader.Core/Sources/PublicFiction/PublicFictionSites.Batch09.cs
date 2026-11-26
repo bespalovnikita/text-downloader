@@ -71,13 +71,16 @@ internal static partial class PublicFictionSites
         },
         WorksArchive("SquidgeWorld Archive", "squidgeworld.org", "/works?work_search%5Brating_ids%5D=10"),
         WorksArchive("Ad Astra Star Trek Fanfiction Archive", "www.adastrafanfic.com", "/works"),
-        new("NovelFrance", "https://novelfrance.fr/rankings", "novelfrance.fr",
-            @"/novel/(?<work>[a-z0-9-]+)/?", @"/novel/(?<work>[a-z0-9-]+)/(?<part>chapter-[a-z0-9.-]+)/?",
-            "//div[contains(concat(' ',normalize-space(@class),' '),' chapter-content ')]")
+        new("Fanficauthors.net", "https://jeconais.fanficauthors.net/Harry_Potter/", "jeconais.fanficauthors.net",
+            @"/(?<work>[A-Za-z0-9_-]+)/index/?",
+            @"/(?<work>[A-Za-z0-9_-]+)/(?<part>(?!index(?:/|$))[A-Za-z0-9_-]+)/?",
+            "//div[contains(concat(' ',normalize-space(@class),' '),' chapterDisplay ')]/div[1]")
         {
-            FirstChapter = "(//a[normalize-space(.)='Commencer la lecture' and contains(@href,'/chapter-')])[1]",
-            NextChapter = "//a[@href and starts-with(normalize-space(.),'Suivant') and contains(@href,'/chapter-')]",
-            WorkFromChapter = "/novel/${work}"
+            WorkTitle = "//h2[contains(@class,'text-center')] | //title",
+            ChapterTitle = "//h2[contains(@class,'text-center')] | //title",
+            Contents = "//main//a[@href and not(contains(@href,'/reviews/')) and not(contains(@href,'/print/')) " +
+                "and not(contains(@href,'/index/')) and contains(@href,'/') and ancestor::ol]",
+            WorkFromChapter = "/${work}/index/"
         }
     ]);
 
