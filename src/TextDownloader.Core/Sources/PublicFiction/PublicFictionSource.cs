@@ -245,8 +245,12 @@ internal sealed class PublicFictionSource : IBookStorySource
 
     private StoryPage ParseChapter(HtmlDocument html, Uri url, int number, string? fallbackTitle = null)
     {
-        var content = html.DocumentNode.SelectSingleNode(_site.Content)
-            ?? throw new InvalidDataException("Не найден текст главы " + _site.Name + ".");
+        var content = html.DocumentNode.SelectSingleNode(_site.Content);
+        if (content is null)
+        {
+            ReportChapterMarkup(html, url);
+            throw new InvalidDataException("Не найден текст главы " + _site.Name + ".");
+        }
         string title = Text(html.DocumentNode.SelectSingleNode(_site.ChapterTitle));
         if (title.Length == 0) title = fallbackTitle ?? "";
         string? author = _site.Author is { } path ? Text(html.DocumentNode.SelectSingleNode(path)) : null;
@@ -258,6 +262,22 @@ internal sealed class PublicFictionSource : IBookStorySource
         if (title.Length == 0 || !text.Any(char.IsLetterOrDigit))
             throw new InvalidDataException("Глава " + _site.Name + " не содержит названия или текста.");
         return new StoryPage(url, number, title, author, text, null, null);
+    }
+
+    private void ReportChapterMarkup(HtmlDocument html, Uri url)
+    {
+        if (_log is null) return;
+        var shapes = html.DocumentNode.Descendants()
+            .Where(node => node.Name is "article" or "div" or "main" or "section" or "td" or "blockquote")
+            .Select(node => (Node: node, Length: node.ChildNodes
+                .Where(child => child.Name is "p" or "pre").Sum(child => child.InnerText.Length)))
+            .Where(candidate => candidate.Length > 80)
+            .OrderByDescending(candidate => candidate.Length)
+            .Take(4)
+            .Select(candidate => candidate.Node.Name + "#" + Attribute(candidate.Node, "id") + "." +
+                string.Join(".", Attribute(candidate.Node, "class").Split(' ', StringSplitOptions.RemoveEmptyEntries)));
+        _log.Report(new DownloadLogEvent(DownloadLogLevel.Detail,
+            $"Разметка текста {url.GetLeftPart(UriPartial.Path)}: {string.Join(", ", shapes)}"));
     }
 
     private async Task<LoadedPage> ReadStoryAsync(Uri url, CancellationToken token)

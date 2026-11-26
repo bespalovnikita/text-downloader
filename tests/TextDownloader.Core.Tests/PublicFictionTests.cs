@@ -73,17 +73,19 @@ internal static class PublicFictionTests
 
         int seed = Random.Shared.Next();
         Console.WriteLine($"Catalog selection seed {seed}.");
-        var factory = SupportedStorySource.CreateFactory();
-        using var router = factory(TimeSpan.FromMilliseconds(350));
+        var factory = SupportedStorySource.CreateLoggedFactory();
         var results = new bool[sites.Length];
         await Parallel.ForEachAsync(Enumerable.Range(0, sites.Length), new ParallelOptions { MaxDegreeOfParallelism = 4 },
-            async (i, token) => results[i] = await CheckLiveAsync(sites[i], router, new Random(seed + i), token));
+            async (i, token) => results[i] = await CheckLiveAsync(sites[i], factory, new Random(seed + i), token));
         Console.WriteLine($"{results.Count(ok => ok)}/{sites.Length} live site checks passed.");
         return results.All(ok => ok) ? 0 : 1;
     }
 
-    private static async Task<bool> CheckLiveAsync(PublicFictionSite site, IStorySource router, Random random, CancellationToken token)
+    private static async Task<bool> CheckLiveAsync(PublicFictionSite site,
+        Func<TimeSpan, IProgress<DownloadLogEvent>?, IStorySource> factory, Random random, CancellationToken token)
     {
+        var log = new MarkupLog();
+        using var router = factory(TimeSpan.FromMilliseconds(350), log);
         using var source = new PublicFictionSource(site, TimeSpan.FromMilliseconds(350), new PageRequestThrottle());
         using var temp = new TempDirectory();
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -122,6 +124,7 @@ internal static class PublicFictionTests
         catch (Exception error)
         {
             Console.Error.WriteLine($"FAIL {site.Name} | {error.Message}");
+            foreach (var shape in log.Shapes.Take(3)) Console.Error.WriteLine(shape);
             return false;
         }
     }
@@ -138,6 +141,16 @@ internal static class PublicFictionTests
             var path = request.RequestUri!.PathAndQuery;
             if (!pages.TryGetValue(path, out var html)) throw new InvalidOperationException($"Unexpected request {path}");
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(html) });
+        }
+    }
+
+    private sealed class MarkupLog : IProgress<DownloadLogEvent>
+    {
+        public List<string> Shapes { get; } = [];
+        public void Report(DownloadLogEvent value)
+        {
+            if (value.Message.StartsWith("Разметка текста ", StringComparison.Ordinal))
+                Shapes.Add(value.Message);
         }
     }
 
