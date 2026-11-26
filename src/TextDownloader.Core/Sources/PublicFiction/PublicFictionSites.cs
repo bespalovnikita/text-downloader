@@ -7,9 +7,39 @@ internal static partial class PublicFictionSites
     private const string FanficText = "//div[contains(concat(' ',normalize-space(@class),' '),' ReadContent ')]" +
         "//div[contains(concat(' ',normalize-space(@class),' '),' chapter ')]";
 
-    internal static IEnumerable<PublicFictionSite> All => Batches.SelectMany(batch => batch);
+    internal static IEnumerable<PublicFictionSite> All => Batches.Values.SelectMany(batch => batch);
 
-    internal static IReadOnlyList<PublicFictionSite[]> Batches => [FirstBatch, SecondBatch, ThirdBatch];
+    internal static IReadOnlyDictionary<int, PublicFictionSite[]> Batches => Registry.Batches;
+
+    static partial void AddBatch05(Dictionary<int, PublicFictionSite[]> batches);
+    static partial void AddBatch06(Dictionary<int, PublicFictionSite[]> batches);
+    static partial void AddBatch07(Dictionary<int, PublicFictionSite[]> batches);
+    static partial void AddBatch08(Dictionary<int, PublicFictionSite[]> batches);
+    static partial void AddBatch09(Dictionary<int, PublicFictionSite[]> batches);
+    static partial void AddBatch10(Dictionary<int, PublicFictionSite[]> batches);
+
+    private static class Registry
+    {
+        internal static readonly IReadOnlyDictionary<int, PublicFictionSite[]> Batches = Create();
+
+        private static IReadOnlyDictionary<int, PublicFictionSite[]> Create()
+        {
+            var batches = new Dictionary<int, PublicFictionSite[]>
+            {
+                [1] = FirstBatch,
+                [2] = SecondBatch,
+                [3] = ThirdBatch,
+                [4] = FourthBatch
+            };
+            AddBatch05(batches);
+            AddBatch06(batches);
+            AddBatch07(batches);
+            AddBatch08(batches);
+            AddBatch09(batches);
+            AddBatch10(batches);
+            return batches;
+        }
+    }
 
     private static readonly PublicFictionSite[] FirstBatch =
     [

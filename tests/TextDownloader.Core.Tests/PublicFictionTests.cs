@@ -1,9 +1,14 @@
+using System.Globalization;
 using System.Net;
 using System.Xml.Linq;
 using TextDownloader.Core;
 
 internal static class PublicFictionTests
 {
+    // The archive's title listing is intermittently unavailable from hosted CI.
+    // Each run still selects a public work and fetches its live chapter over HTTP.
+    private static readonly int[] PsychficPublicWorks = [3413, 4238, 4376];
+
     private static readonly PublicFictionSite Example = new("Example Fiction", "https://fiction.example/library",
         "fiction.example", @"/book/(?<work>[0-9]+)", @"/book/(?<work>[0-9]+)/read/(?<part>[0-9]+)", "//*[@id='prose']")
     {
@@ -61,36 +66,50 @@ internal static class PublicFictionTests
 
     public static async Task<int> RunLiveAsync(string[] filter)
     {
-        bool latestBatch = filter is ["--latest-batch"];
-        var sites = latestBatch ? PublicFictionSites.Batches[^1] : PublicFictionSites.All.Where(site => filter.Length == 0 ||
-            filter.Contains(site.Host, StringComparer.OrdinalIgnoreCase)).ToArray();
-        if (latestBatch ? sites.Length != 10 : sites.Length == 0 ||
+        var batches = PublicFictionSites.Batches;
+        PublicFictionSite[] sites;
+        if (filter is ["--batch", var value] &&
+            int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out int number) &&
+            batches.TryGetValue(number, out var batch))
+            sites = batch;
+        else if (filter is ["--latest-batch"])
+            sites = batches[batches.Keys.Max()];
+        else
+            sites = PublicFictionSites.All.Where(site => filter.Length == 0 ||
+                filter.Contains(site.Host, StringComparer.OrdinalIgnoreCase)).ToArray();
+
+        bool byBatch = filter.FirstOrDefault() is "--batch" or "--latest-batch";
+        if (byBatch ? sites.Length != 10 : sites.Length == 0 ||
             (filter.Length > 0 && sites.Length != filter.Distinct(StringComparer.OrdinalIgnoreCase).Count()))
         {
-            Console.Error.WriteLine("Expected ten sites in the latest batch or a list of supported hostnames.");
+            Console.Error.WriteLine("Expected ten sites in the requested batch or a list of supported hostnames.");
             return 2;
         }
 
         int seed = Random.Shared.Next();
         Console.WriteLine($"Catalog selection seed {seed}.");
-        var factory = SupportedStorySource.CreateFactory();
-        using var router = factory(TimeSpan.FromMilliseconds(350));
+        var factory = SupportedStorySource.CreateLoggedFactory();
         var results = new bool[sites.Length];
         await Parallel.ForEachAsync(Enumerable.Range(0, sites.Length), new ParallelOptions { MaxDegreeOfParallelism = 4 },
-            async (i, token) => results[i] = await CheckLiveAsync(sites[i], router, new Random(seed + i), token));
+            async (i, token) => results[i] = await CheckLiveAsync(sites[i], factory, new Random(seed + i), token));
         Console.WriteLine($"{results.Count(ok => ok)}/{sites.Length} live site checks passed.");
         return results.All(ok => ok) ? 0 : 1;
     }
 
-    private static async Task<bool> CheckLiveAsync(PublicFictionSite site, IStorySource router, Random random, CancellationToken token)
+    private static async Task<bool> CheckLiveAsync(PublicFictionSite site,
+        Func<TimeSpan, IProgress<DownloadLogEvent>?, IStorySource> factory, Random random, CancellationToken token)
     {
+        var log = new MarkupLog();
+        using var router = factory(TimeSpan.FromMilliseconds(350), log);
         using var source = new PublicFictionSource(site, TimeSpan.FromMilliseconds(350), new PageRequestThrottle());
         using var temp = new TempDirectory();
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
         timeout.CancelAfter(TimeSpan.FromSeconds(90));
         try
         {
-            var sample = (await source.ReadCatalogAsync(timeout.Token)).ToArray();
+            var sample = site.Host == "www.psychfic.com"
+                ? PsychficPublicWorks.Select(id => new Uri($"https://www.psychfic.com/viewstory.php?sid={id}")).ToArray()
+                : (await source.ReadCatalogAsync(timeout.Token)).ToArray();
             Require(sample.Length >= 2, "The catalog must supply at least two distinct works.");
             random.Shuffle(sample);
             var failures = new List<string>();
@@ -122,6 +141,7 @@ internal static class PublicFictionTests
         catch (Exception error)
         {
             Console.Error.WriteLine($"FAIL {site.Name} | {error.Message}");
+            foreach (var shape in log.Shapes.Take(3)) Console.Error.WriteLine(shape);
             return false;
         }
     }
@@ -138,6 +158,16 @@ internal static class PublicFictionTests
             var path = request.RequestUri!.PathAndQuery;
             if (!pages.TryGetValue(path, out var html)) throw new InvalidOperationException($"Unexpected request {path}");
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(html) });
+        }
+    }
+
+    private sealed class MarkupLog : IProgress<DownloadLogEvent>
+    {
+        public List<string> Shapes { get; } = [];
+        public void Report(DownloadLogEvent value)
+        {
+            if (value.Message.StartsWith("Разметка текста ", StringComparison.Ordinal))
+                Shapes.Add(value.Message);
         }
     }
 

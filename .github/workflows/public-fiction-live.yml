@@ -19,13 +19,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - name: Verify sites from the latest batch
+      - name: Verify sites from the changed batch
         if: github.event_name == 'pull_request'
-        run: dotnet run --project tests/TextDownloader.Core.Tests -c Release -- --live-public-sites --latest-batch
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          mapfile -t batches < <(
+            git diff --name-only --diff-filter=AM "$PR_BASE...$PR_HEAD" |
+              sed -nE 's@^src/TextDownloader.Core/Sources/PublicFiction/PublicFictionSites\.Batch(0[5-9]|10)\.cs$@\1@p'
+          )
+          if (( ${#batches[@]} == 0 )); then
+            dotnet run --project tests/TextDownloader.Core.Tests -c Release -- --live-public-sites --latest-batch
+          else
+            for batch in "${batches[@]}"; do
+              dotnet run --project tests/TextDownloader.Core.Tests -c Release -- --live-public-sites --batch "$batch" || exit
+            done
+          fi
       - name: Verify all sites
         if: github.event_name == 'workflow_dispatch'
         run: dotnet run --project tests/TextDownloader.Core.Tests -c Release -- --live-public-sites
