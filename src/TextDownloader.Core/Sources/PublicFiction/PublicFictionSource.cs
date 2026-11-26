@@ -86,6 +86,8 @@ internal sealed class PublicFictionSource : IBookStorySource
         progress?.Report(new DownloadProgress(0, null, "Читаем оглавление " + _site.Name + "…")
             { Checkpoint = new DownloadCheckpoint(work, null, work) });
         var index = await ReadIndexAsync(work, cancellationToken).ConfigureAwait(false);
+        if (_site.SortContentsByChapterNumber && ChapterSequence(index.Start) > 1)
+            throw new InvalidDataException("Оглавление не содержит первой главы. Неполный текст не экспортирован.");
         var cacheReader = new StoryDownloader(this, cacheDirectory);
         var cache = cacheReader.PartCacheDirectory(work);
         var chapters = new List<BookChapter>();
@@ -149,7 +151,23 @@ internal sealed class PublicFictionSource : IBookStorySource
     // Catalogs are used by the opt-in integration tests. Reading URLs still follow the normal router.
     internal async Task<IReadOnlyList<Uri>> ReadCatalogAsync(CancellationToken token)
     {
-        var catalog = _site.Catalog;
+        if (_site.AlternateCatalog is not { } alternate)
+            return await ReadCatalogAsync(_site.Catalog, token).ConfigureAwait(false);
+
+        try
+        {
+            var choices = await ReadCatalogAsync(_site.Catalog, token).ConfigureAwait(false);
+            if (choices.Count >= 2) return choices;
+        }
+        catch (Exception error) when (!token.IsCancellationRequested && error is HttpRequestException or InvalidDataException)
+        {
+            _log?.Report(new DownloadLogEvent(DownloadLogLevel.Detail, error.Message));
+        }
+        return await ReadCatalogAsync(alternate, token).ConfigureAwait(false);
+    }
+
+    private async Task<IReadOnlyList<Uri>> ReadCatalogAsync(Uri catalog, CancellationToken token)
+    {
         var document = await ReadHtmlAsync(catalog, target => PublicFictionSite.IsWeb(target) &&
             target.Scheme == Uri.UriSchemeHttps && catalog.IdnHost == target.IdnHost &&
             catalog.AbsolutePath == target.AbsolutePath, token).ConfigureAwait(false);

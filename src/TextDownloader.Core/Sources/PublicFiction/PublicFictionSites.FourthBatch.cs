@@ -67,11 +67,12 @@ internal static partial class PublicFictionSites
             SortContentsByChapterNumber = true,
             WorkFromChapter = "/${work}/"
         },
-        new("Psychfic", "https://www.psychfic.com/browse.php?type=recent", "www.psychfic.com",
+        new("Psychfic", "https://www.psychfic.com/browse.php?type=titles", "www.psychfic.com",
             @"/viewstory\.php\?sid=(?<work>[0-9]+)", @"/viewstory\.php\?sid=(?<work>[0-9]+)(?:&textsize=[0-9]+)?(?:&chapter=(?<part>[0-9]+))?",
             "//*[@id='story']")
         {
             QueryIsRoute = true,
+            AlternateCatalog = new Uri("https://www.psychfic.com/"),
             WorkTitle = "//title",
             ChapterTitle = "//title",
             FirstChapter = "//*[@id='output']//a[contains(@href,'&chapter=1') and @href][1]",
