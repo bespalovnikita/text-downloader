@@ -7,7 +7,9 @@ internal static partial class PublicFictionSites
     private const string FanficText = "//div[contains(concat(' ',normalize-space(@class),' '),' ReadContent ')]" +
         "//div[contains(concat(' ',normalize-space(@class),' '),' chapter ')]";
 
-    internal static IReadOnlyList<PublicFictionSite> All => [.. FirstBatch, .. SecondBatch, .. ThirdBatch];
+    internal static IEnumerable<PublicFictionSite> All => Batches.SelectMany(batch => batch);
+
+    internal static IReadOnlyList<PublicFictionSite[]> Batches => [FirstBatch, SecondBatch, ThirdBatch];
 
     private static readonly PublicFictionSite[] FirstBatch =
     [
