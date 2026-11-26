@@ -18,93 +18,112 @@ jobs:
           python3 -m pip install --quiet lxml
           python3 - <<'PY'
           from concurrent.futures import ThreadPoolExecutor
-          from urllib.error import HTTPError
           from urllib.parse import urljoin, urlsplit
           from urllib.request import Request, urlopen
+          import re
           from lxml.html import fromstring, HTMLParser
 
-          urls = {'fanficEs1': 'https://fanfic.es/readfic/2416-Cabritos', 'fanficEs2': 'https://fanfic.es/readfic/2411-Entre-Grietas-y-Mundos', 'fanficEs3': 'https://fanfic.es/readfic/2419-Sin-t%C3%ADtulo', 'silChapter': 'https://www.silmarillionwritersguild.org/node/9379/fanwork', 'silChapter2': 'https://www.silmarillionwritersguild.org/node/9758/fanwork', 'fanficacat': 'https://jeconais.fanficauthors.net/Harry_Potter/', 'fanficabook': 'https://jeconais.fanficauthors.net/Hogwarts_Dawn/index/', 'fanficabook2': 'https://jeconais.fanficauthors.net/Perfect_Slytherins__Tales_from_the_Fourth_Year/index/', 'authorToday': 'https://author.today/work', 'authorTodaycat': 'https://author.today/work/genre/fanfiction', 'ficbook': 'https://ficbook.net/fanfiction', 'novelokurC': 'https://novelokur.com.tr/chapter/bolum-1-bir-hap-tanrisinin-anilari/', 'sonicw': 'https://www.sonicmtl.com/novel/complete-martial-arts-attributes/', 'sonicc': 'https://www.sonicmtl.com/novel/complete-martial-arts-attributes/chapter-1/', 'novelcoolc': 'https://www.novelcool.com/chapter/Chapter-1-Not-Her-Fault/13452180/', 'novelcoolcat': 'https://www.novelcool.com/novel/search.html?type=Novel', 'wuxiaclick': 'https://wuxia.click/novel/renegade-immortal', 'wuxiaclickc': 'https://wuxia.click/novel/renegade-immortal/chapter-1', 'lemon1': 'https://lemontreetranslations.wordpress.com/di-daughters-rebirth/', 'lemon2': 'https://lemontreetranslations.wordpress.com/qt-second-female-lead/', 'lazybird1': 'https://lazybirdtranslations.wordpress.com/the-prestigious-familys-young-lady-and-the-farmer/', 'lazybird2': 'https://lazybirdtranslations.wordpress.com/the-ultimate-business-lady/', 'asiannovelc': 'https://www.asianovel.net/chapter/chapter-941880/', 'puretl': 'https://puretl.com/translations', 'hui': 'https://hui3r.wordpress.com/category/books/', 'ancient': 'https://ancientheartloss.wordpress.com/light-novels/', 'inadequate': 'https://inadequatetranslations.wordpress.com/stories/', 'cc': 'https://cclawtranslations.home.blog/completed-projects/', 'infinite': 'https://infinitenoveltranslations.net/light-novels/', 'relibrary': 'https://re-library.com/translations/', 'tomo': 'https://tomotranslations.com/translations/', 'silver': 'https://silvernekoscanlations.home.blog/novels/', 'otaku': 'https://otakutl.blogspot.com/p/list-of-translations.html', 'litnet': 'https://litnet.com/ru/top/fanfik', 'booknet': 'https://booknet.ua/reader/stanu-tob-tatom-b429253?c=4644577', 'whizzercat': 'https://whatsawhizzerwebnovels.com/novels/', 'fuyuA': 'https://www.fuyuneko.org/blog-1/aacw/ch-001', 'fuyuB': 'https://www.fuyuneko.org/manatee/mstp/ch-001', 'fringeC': 'https://www.fringecapybara.com/mmlb-toc'}
+          works = {
+              "cc1": "https://cclawtranslations.home.blog/aoharu-devil-toc/",
+              "cc2": "https://cclawtranslations.home.blog/ankoku-kishi-to-issho-toc/",
+              "re1": "https://re-library.com/translations/demon-sword-maiden/",
+              "re2": "https://re-library.com/translations/dragon-princess/",
+              "inf1": "https://infinitenoveltranslations.net/light-novels/atelier-tanaka/",
+              "inf2": "https://infinitenoveltranslations.net/light-novels/nidoume-no-jinsei-wo-isekai-de/",
+              "inf3": "https://infinitenoveltranslations.net/atelier-tanaka/",
+              "inf4": "https://infinitenoveltranslations.net/nidoume-no-jinsei-wo-isekai-de/",
+              "pure1": "https://puretl.com/tcfpcd",
+              "pure2": "https://puretl.com/tvhba",
+              "pure3": "https://puretl.com/gourd-farm",
+              "silver1": "https://silvernekoscanlations.home.blog/who-dares-slander-my-senior-brother/",
+              "silver2": "https://silvernekoscanlations.home.blog/thriller-trainee-tltn/",
+              "lazy1": "https://lazybirdtranslations.wordpress.com/the-prestigious-familys-young-lady-and-the-farmer/",
+              "lazy2": "https://lazybirdtranslations.wordpress.com/the-ultimate-business-lady/",
+              "lemon1": "https://lemontreetranslations.wordpress.com/di-daughters-rebirth/",
+              "lemon2": "https://lemontreetranslations.wordpress.com/qt-second-female-lead/",
+              "dobelyu1": "https://dobelyuwai.wordpress.com/ano-otomege-wa-oretachi-ni-kibishii-sekai-desu/",
+              "dobelyu2": "https://dobelyuwai.wordpress.com/to-be-power-in-the-shadow/",
+              "wuxia1": "https://wuxia.click/novel/renegade-immortal",
+              "wuxia2": "https://wuxia.click/novel/shadow-slave",
+              "sonic1": "https://www.sonicmtl.com/novel/complete-martial-arts-attributes/",
+              "sonic2": "https://www.sonicmtl.com/novel/beast-taming-starting-from-zero/",
+              "sil1": "https://www.silmarillionwritersguild.org/node/9379/fanwork",
+              "sil2": "https://www.silmarillionwritersguild.org/node/9758/fanwork",
+              "fanfic1": "https://fanfic.es/readfic/2343-El-f%C3%A9nix-de-Credence",
+              "fanfic2": "https://fanfic.es/readfic/941-Sangre-y-fuego-y-otras-magias-extra%C3%B1as",
+              "fanfic3": "https://fanfic.es/readfic/2416-Cabritos",
+              "asian1": "https://www.asianovel.net/story/3925/",
+              "asian2": "https://www.asianovel.net/story/3921/",
+              "fanficabook": "https://jeconais.fanficauthors.net/Hogwarts_Dawn/index/",
+          }
 
-          def clean(value, limit=200):
-              return " ".join(value.split())[:limit]
+          def label(s, length=80):
+              return " ".join(s.split())[:length]
 
-          def describe(node):
-              return clean(node.tag + "#" + node.get("id", "") + "." + node.get("class", ""), 130)
+          def describe(n):
+              return label(n.tag+"#"+n.get("id","")+"."+n.get("class",""), 115)
+
+          def load(url):
+              with urlopen(Request(url, headers={"User-Agent":"TextDownloader/1.0","Accept":"text/html"}), timeout=8) as response:
+                  return response.geturl(), fromstring(response.read(6*1024*1024), parser=HTMLParser(encoding="utf8"))
+
+          def shape(url, doc):
+              result = []
+              for node in doc.xpath("//p/parent::*|//div[./br]|//div[./text()[string-length(normalize-space(.))>100]]|//section[./p]"):
+                  l = sum(len(t.strip()) for t in node.xpath("./text()|./p//text()") if t and t.strip())
+                  if l >= 200:
+                      result.append((l, " > ".join(describe(a) for a in [node,*list(node.iterancestors())[:3]])))
+              result=sorted(set(result),reverse=True)[:5]
+              return f"{url} title={label(doc.xpath('string(//title)'))!r} canonical={doc.xpath('//link[@rel=\"canonical\"]/@href')[:1]!r} shapes={result!r}"
 
           def probe(item):
               name, url = item
               try:
-                  with urlopen(Request(url, headers={"User-Agent": "TextDownloader/1.0", "Accept": "text/html,application/xhtml+xml"}), timeout=9) as response:
-                      response_url = response.geturl()
-                      html = response.read(5 * 1024 * 1024)
-                      doc = fromstring(html, parser=HTMLParser(encoding="utf8"))
-                  text = [f"{name} {response_url} {len(html)} {clean(doc.xpath('string(//title)'))}"]
-                  text.append("head " + repr([(describe(h), len(h.text_content())) for h in doc.xpath("//h1|//h2")[:7]]) +
-                              " canonical " + repr(doc.xpath("//link[@rel='canonical']/@href")[:3]))
-                  props = {describe(a):sum(len(p.text_content()) for p in a.xpath("./p")) for a in doc.xpath("//p/parent::* | //div[./br]")}
-                  blocks=[]
-                  for tag in doc.xpath("//div|//section|//article|//main|//pre|//td"):
-                      length=sum(len(t.strip()) for t in tag.xpath("./text()|./p/text()") if t and t.strip())
-                      if length >= 100:
-                          blocks.append((length,describe(tag),describe(tag.getparent())))
-                  text.append("prose " + repr(sorted(props.items(), key=lambda x:-x[1])[:3]) + "; direct " +
-                              repr(sorted(blocks,reverse=True)[:7]))
-                  links = {}
-                  for node in doc.xpath("//a[@href]|//option[@value]"):
-                      path = node.get("href", node.get("value",""))
-                      target = urlsplit(urljoin(response_url, path))
-                      if not path or path.startswith(("#", "javascript:")) or target.hostname != urlsplit(response_url).hostname:
-                          continue
-                      short = clean(node.text_content(), 55)
-                      rank = 0
-                      signals = ("chapter", "read first", "first chapter", "start reading", "contents", "next", "/book/", "/novel/", "viewstory", "s/", "chapit", "开始", "第一", "阅读")
-                      mark = " ".join((path, short, node.get("id",""), node.get("class",""))).lower()
-                      if any(k in mark for k in signals):
-                          rank += 5
-                      if "first" in mark or "chapter-1/" in mark or "starts" in mark or "chuong-1" in mark or "bab-1" in mark or short.lower() == "last" or ".txt" in mark:
-                          rank += 4
-                      if short.lower() in ("last", "first", "next", "read", "читать", "читати", "start reading") or "chapter-1/" in mark:
-                          rank += 10
-                      if target.path.startswith(("/story/", "/stories/", "/fiction/", "/works/", "/read/", "/books/read/", "/chapters/", "/reader/", "/novel/", "/obra/", "/fics/", "/fanfic/")) and target.path.strip("/").count("/") > 0:
-                          rank += 10
-                      if name.startswith("fanficEs") and ("fanfic-title" in describe(node.getparent()) or any(v in mark for v in ("read_fanfic", "fanfic-title", "fanfic_name", "/fanfic/", "/readfic/", "/obra/", "/fic/"))):
-                          rank += 20
-                      if name.startswith("sil") and any(t in mark for t in ("/node/", "fiction", "works", "fanwork")):
-                          rank += 20
-                      if name.startswith("firefly") and any(t in mark for t in (".asp", "read", "bluesun", "fanfic")):
-                          rank += 20
-                      if name == "bloodshed" and any(t in mark for t in ("chapter", "story", "fic", "browse")):
-                          rank += 20
-                      if name.startswith("booknet") and ("page=" in target.query or "наступ" in mark or "next" in mark):
-                          rank += 40
-                      if name.startswith("fanficac") and target.path.endswith("/index/"):
-                          rank += 35
-                      if name.startswith(("lemon", "lazybird", "novelokur", "snowy")) and ("chapter" in mark or "prologue" in mark or "bölüm" in mark):
-                          if "first" in mark or "/1/" in mark or "-1/" in mark or short.lower().startswith(("chapter 1 ", "chapter 1 –", "chapter 1:", "chapter 1.", "prologue")):
-                              rank += 100
-                          rank += 40
-                      if name.startswith(("puretl","hui","ancient","inadequate","cc","infinite","relibrary","tomo","silver","otaku")) and any(t in mark for t in ("toc", "contents", "novels", "novel", "volume", "project")):
-                          rank += 35
-                      if name.startswith("fanficabook") and target.path.strip("/").count("/")==1 and target.path.split("/")[1]==urlsplit(response_url).path.split("/")[1]:
-                          rank += 35
-                      if name.startswith("wuxia") and target.path.startswith("/chapter/"):
-                          rank += 35
-                      if name.startswith("novelspl"):
-                          rank = 20 if "p=" in target.query or ".html" in target.path else rank
-                      if name in ("fringeCatalog","fuyu","fuyu1") and any(t in mark for t in ("toc", "/vbms", "/cfm", "/chongfei", "/work", "/chapter")):
-                          rank += 15
-                      absolute = target.path + (("?" + target.query) if target.query else "")
-                      if absolute in links:
-                          continue
-                      links[absolute] = (rank, clean(absolute,160), short, describe(node))
-                  text.append("links " + repr([entry[1:] for entry in sorted(links.values(), key=lambda x:-x[0])[:21]]))
-                  return "\n".join(text)
-              except HTTPError as error:
-                  return f"{name} HTTP {error.code} {error.geturl()}"
-              except Exception as error:
-                  return f"{name} {error}"
+                  url,doc=load(url)
+                  uri=urlsplit(url)
+                  links={}
+                  for a in doc.xpath("//a[@href]"):
+                      raw=a.get("href")
+                      if raw.startswith(("#","javascript:","?")): continue
+                      href=urljoin(url,raw)
+                      t=urlsplit(href)
+                      if t.hostname!=uri.hostname or t.path==uri.path or href in links:continue
+                      name_text=label(a.text_content(), 75)
+                      body_region=any("entry-content" in (n.get("class") or "") or n.get("id")=="main" for n in a.iterancestors())
+                      desc=describe(a)
+                      rank=0
+                      if re.search(r"(prologue|prólogo|序章|chapter[-_ ]?0(?!\d)|^(?:start reading|read first)$)", name_text, re.I):
+                          rank+=55
+                      if re.search(r"(chapter[-_ ]?0*1(?!\d)|part[-_ ]?0*1(?!\d)|^(?:chapter |chapter|act )?1(?:[. :—–-]|$))",name_text,re.I):
+                          rank+=35
+                      if re.search(r"(chapter|prologue|epilogue|ch-?[0-9]|[0-9]/[0-9]{2}/[0-9]{2}|/vol(?:ume)?|/chapter/)",t.path,re.I):
+                          rank+=20
+                      if body_region:rank+=10
+                      if a.get("id") in ("btn-read-first", "btn-read-last") or a.get("rel")=="next":rank+=40
+                      if "chapter-group__list-item-link" in (a.get("class") or ""):rank+=20
+                      if name.startswith("fanfic") and "/readfic/" in t.path:rank+=30
+                      if name.startswith("sil") and "#chapter" in href:rank+=60
+                      if any(x in t.path for x in ("reviews","comment","author","terms","privacy","/tag/","/login","/category/")):rank-=25
+                      if rank>0:
+                          links[href]=(rank, t.path, name_text, desc, describe(a.getparent()), href)
+                  candidates=sorted(links.values(),key=lambda x:-x[0])
+                  result = [f"{name} {shape(url,doc)}", "links " + repr([v[1:5] for v in candidates[:10]])]
+                  if name.startswith(("fanfic","sil")):
+                      return "\n".join(result)
+                  for candidate in candidates[:2]:
+                      if candidate[0]<25:continue
+                      try:
+                          child, html=load(candidate[-1])
+                          result.append(f"{name}chapter {shape(child,html)}")
+                          nav=[(a.get('href'),label(a.text_content(),35),describe(a)) for a in html.xpath("//a[@href]") if a.get('rel')=='next' or 'next_page' in (a.get('class') or '') or a.get('aria-label') in ('Next', 'Next Chapter') or label(a.text_content(),35).lower().startswith(('next chapter','next→'))]
+                          result.append("links " + repr(list(dict.fromkeys(nav))[:7]))
+                      except Exception as e:
+                          result.append(f"{name}chapter {candidate[-1]} {e}")
+                  return "\n".join(result)
+              except Exception as e:
+                  return f"{name} {url} {e}"
 
-          with ThreadPoolExecutor(max_workers=6) as pool:
-              for result in pool.map(probe, urls.items()):
-                  print(result, flush=True)
+          with ThreadPoolExecutor(max_workers=7) as pool:
+              for result in pool.map(probe, works.items()):
+                  print(result,flush=True)
           PY
