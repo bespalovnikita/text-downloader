@@ -76,7 +76,9 @@ https://bestweapon.cc/post_124145
 - Для открытых ранобэ и фанфиков можно вставить ссылку на произведение или главу.
   Приложение начинает загрузку с первой главы. Поддерживаются FanFiction.Net,
   FictionPress, Fanfics.me, Ranobe.me, Scribble Hub, Shōsetsuka ni Narō,
-  Kakuyomu, Fimfiction, ReadNovel и ReadNovelFull.
+  Kakuyomu, Fimfiction, ReadNovel, ReadNovelFull, Hiraeth Translation,
+  Fantasy World Online, NovelFull, FreeWebNovel, WoopRead, 爱下电子书,
+  NovelRare, Divine Dao Library, NoBadNovel и Lazy Girl Translations.
 - На Sefan состав цикла берётся из оглавления. Каталоги, поиск и страницы
   анонсов `_nova.html` не обрабатываются.
 - На Bestweapon состав и порядок цикла определяются по оглавлению публикации.

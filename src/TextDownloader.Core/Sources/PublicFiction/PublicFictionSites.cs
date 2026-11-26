@@ -1,13 +1,15 @@
 namespace TextDownloader.Core;
 
-internal static class PublicFictionSites
+internal static partial class PublicFictionSites
 {
     private const string SyosetuText = "//div[@class='js-novel-text p-novel__text']";
     private const string FanficContents = "//div[@class='FicContentsChapterName']/a[@href]";
     private const string FanficText = "//div[contains(concat(' ',normalize-space(@class),' '),' ReadContent ')]" +
         "//div[contains(concat(' ',normalize-space(@class),' '),' chapter ')]";
 
-    internal static IReadOnlyList<PublicFictionSite> All { get; } =
+    internal static IReadOnlyList<PublicFictionSite> All => [.. FirstBatch, .. SecondBatch];
+
+    private static readonly PublicFictionSite[] FirstBatch =
     [
         FanFictionArchive("FanFiction.Net", "www.fanfiction.net", "/book/Harry-Potter/"),
         FanFictionArchive("FictionPress", "www.fictionpress.com", "/fiction/Fantasy/"),
