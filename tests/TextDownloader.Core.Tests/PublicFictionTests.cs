@@ -122,6 +122,20 @@ internal static class PublicFictionTests
                     new Uri("https://secondlifetranslations.com/novel/abc/"),
                     new Uri("https://secondlifetranslations.com/novel/yay/")
                 ],
+                // These catalogs can omit public entries or mix in projects without an open chapter.
+                "infinitenoveltranslations.net" =>
+                [
+                    new Uri("https://infinitenoveltranslations.net/no-heaven-for-vampires/"),
+                    new Uri("https://infinitenoveltranslations.net/atelier-tanaka/"),
+                    new Uri("https://infinitenoveltranslations.net/im-a-neet-but-when-i-went-to-hello-work-i-got-taken-to-another-world/")
+                ],
+                "re-library.com" =>
+                [
+                    new Uri("https://re-library.com/translations/vpna-prequel/"),
+                    new Uri("https://re-library.com/translations/otherworld-nation-founding-chronicles/"),
+                    new Uri("https://re-library.com/translations/high-comprehension-low-strength/"),
+                    new Uri("https://re-library.com/translations/dragon-princess/")
+                ],
                 _ => (await source.ReadCatalogAsync(timeout.Token)).ToArray()
             };
             Require(sample.Length >= 2, "The catalog must supply at least two distinct works.");

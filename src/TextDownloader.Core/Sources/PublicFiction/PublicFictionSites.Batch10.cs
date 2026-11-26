@@ -65,7 +65,6 @@ internal static partial class PublicFictionSites
             @"/(?<work>[a-z0-9-]+)/?", @"/(?<work>[a-z0-9-]+)/(?<part>[a-z0-9-]+(?:/[a-z0-9-]+)?)/?",
             "//div[contains(concat(' ',normalize-space(@class),' '),' bs-card-box ') and starts-with(../@id,'post-')]")
         {
-            AlternateCatalog = new Uri("https://infinitenoveltranslations.net/web-novels/"),
             CatalogLinks = "//div[contains(@class,'bs-card-box')]//a[@href] | " +
                 "//a[contains(concat(' ',normalize-space(@class),' '),' dropdown-item ') and @href]",
             WorkTitle = "//h1[normalize-space()] | //title",

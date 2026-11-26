@@ -151,23 +151,7 @@ internal sealed class PublicFictionSource : IBookStorySource
     // Catalogs are used by the opt-in integration tests. Reading URLs still follow the normal router.
     internal async Task<IReadOnlyList<Uri>> ReadCatalogAsync(CancellationToken token)
     {
-        if (_site.AlternateCatalog is not { } alternate)
-            return await ReadCatalogAsync(_site.Catalog, token).ConfigureAwait(false);
-
-        try
-        {
-            var works = await ReadCatalogAsync(_site.Catalog, token).ConfigureAwait(false);
-            if (works.Count >= 2) return works;
-        }
-        catch (Exception error) when (!token.IsCancellationRequested && error is HttpRequestException or InvalidDataException)
-        {
-            _log?.Report(new DownloadLogEvent(DownloadLogLevel.Detail, error.Message));
-        }
-        return await ReadCatalogAsync(alternate, token).ConfigureAwait(false);
-    }
-
-    private async Task<IReadOnlyList<Uri>> ReadCatalogAsync(Uri catalog, CancellationToken token)
-    {
+        var catalog = _site.Catalog;
         var document = await ReadHtmlAsync(catalog, target => PublicFictionSite.IsWeb(target) &&
             target.Scheme == Uri.UriSchemeHttps && catalog.IdnHost == target.IdnHost &&
             catalog.AbsolutePath == target.AbsolutePath, token).ConfigureAwait(false);
