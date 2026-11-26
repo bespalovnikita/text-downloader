@@ -4,16 +4,14 @@ internal static partial class PublicFictionSites
 {
     private static readonly PublicFictionSite[] ThirdBatch =
     [
-        new("Hameln", "https://syosetu.org/?mode=rank", "syosetu.org",
-            @"/novel/(?<work>[0-9]+)/?", @"/novel/(?<work>[0-9]+)/(?<part>[0-9]+)\.html",
-            "//*[@id='honbun']")
+        new("Jobnib", "https://jobnib.com/", "jobnib.com",
+            @"/book/(?![a-z0-9-]+-chapter-[a-z0-9.-]+/?$)(?<work>[a-z0-9-]+)/?",
+            @"/book/(?<work>[a-z0-9-]+?)-(?<part>chapter-[a-z0-9.-]+)/?",
+            "//div[contains(concat(' ',normalize-space(@class),' '),' epcontent ')]")
         {
-            CatalogLinks = "//a[@class='blo_title_link' and @href]",
-            WorkTitle = "//title",
-            ChapterTitle = "//title",
-            Contents = "//a[@class='episode-list__link' and @href]",
-            AllowStandalone = "//*[@id='honbun']",
-            WorkFromChapter = "/novel/${work}/"
+            FirstChapter = "//li[@class='tseplsfrst']/a[@href]",
+            NextChapter = NextByRel,
+            WorkFromChapter = "/book/${work}"
         },
         new("Snowy Codex", "https://snowycodex.com/", "snowycodex.com",
             @"/novels/(?<work>[a-z0-9-]+)/?", @"/novels/(?<work>[a-z0-9-]+)/(?<part>[a-z0-9.-]+)/?",

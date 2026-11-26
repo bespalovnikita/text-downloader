@@ -78,7 +78,7 @@ https://bestweapon.cc/post_124145
   FictionPress, Fanfics.me, Ranobe.me, Scribble Hub, Shōsetsuka ni Narō,
   Kakuyomu, Fimfiction, ReadNovel, ReadNovelFull, Hiraeth Translation,
   Fantasy World Online, NovelFull, FreeWebNovel, WoopRead, 爱下电子书,
-  NovelRare, Divine Dao Library, NoBadNovel, Lazy Girl Translations, Hameln,
+  NovelRare, Divine Dao Library, NoBadNovel, Lazy Girl Translations, Jobnib,
   Snowy Codex, TeaNovel, Novel Mania, Dobytranslations, Asura Scans,
   NovelFrance, MegaNovel, Light Novel Translations и Revenger Novels.
 - На Sefan состав цикла берётся из оглавления. Каталоги, поиск и страницы
