@@ -1,7 +1,7 @@
 # Text Downloader
 
-Windows-приложение для скачивания рассказов и циклов с **Sefan.ru**
-и **Bestweapon.cc** с сохранением в **EPUB, FB2 или оба формата**. Интерфейс и устройство Windows-клиента
+Windows-приложение для скачивания рассказов, ранобэ и фанфиков
+с сохранением в **EPUB, FB2 или оба формата**. Интерфейс и устройство Windows-клиента
 основаны на [Video Downloader](https://github.com/bespalovnikita/video-downloader).
 
 ## Скачать и запустить
@@ -73,8 +73,10 @@ https://bestweapon.cc/post_124145
 ## Поддержка и ограничения
 
 - Поддерживаются раздел рассказов **Sefan.ru** и публикации **Bestweapon.cc**.
-  Другие сайты, в том числе RanobeLib,
-  пока не подключены.
+- Для открытых ранобэ и фанфиков можно вставить ссылку на произведение или главу.
+  Приложение начинает загрузку с первой главы. Поддерживаются FanFiction.Net,
+  FictionPress, Fanfics.me, Ranobe.me, Scribble Hub, Shōsetsuka ni Narō,
+  Kakuyomu, Fimfiction, ReadNovel и ReadNovelFull.
 - На Sefan состав цикла берётся из оглавления. Каталоги, поиск и страницы
   анонсов `_nova.html` не обрабатываются.
 - На Bestweapon состав и порядок цикла определяются по оглавлению публикации.

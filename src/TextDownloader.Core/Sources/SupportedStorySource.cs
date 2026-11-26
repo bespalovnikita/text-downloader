@@ -6,7 +6,9 @@ public sealed class SupportedStorySource : IBookStorySource
     private readonly IStorySource[] _sources;
 
     public SupportedStorySource(SefanSource? sefan = null, BestweaponSource? bestweapon = null)
-        : this(new IStorySource[] { sefan ?? new SefanSource(), bestweapon ?? new BestweaponSource() }) { }
+        : this(new IStorySource[] { sefan ?? new SefanSource(), bestweapon ?? new BestweaponSource() }
+            .Concat(PublicFictionSites.All.Select(site => new PublicFictionSource(site,
+                TimeSpan.FromSeconds(1), new PageRequestThrottle())))) { }
 
     public SupportedStorySource(IEnumerable<IStorySource> sources) => _sources = sources.ToArray();
 
@@ -28,9 +30,12 @@ public sealed class SupportedStorySource : IBookStorySource
         // across its previews and downloads.
         var sefanThrottle = new PageRequestThrottle();
         var bestweaponThrottle = new PageRequestThrottle();
+        var publicFiction = PublicFictionSites.All.Select(site => (Site: site, Throttle: new PageRequestThrottle())).ToArray();
         return (interval, log, browser, rule) => new SupportedStorySource(
             [new SefanSource(null, interval, sefanThrottle, log, browser, rule),
-             new BestweaponSource(null, interval, bestweaponThrottle, log, browser, rule)]);
+             new BestweaponSource(null, interval, bestweaponThrottle, log, browser, rule),
+             .. publicFiction.Select(entry => new PublicFictionSource(entry.Site, interval, entry.Throttle, log,
+                 rule?.Host == entry.Site.Host ? rule : null))]);
     }
 
     public bool CanHandle(Uri uri) => _sources.Any(source => source.CanHandle(uri));
