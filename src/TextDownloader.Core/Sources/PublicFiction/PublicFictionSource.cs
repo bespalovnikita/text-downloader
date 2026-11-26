@@ -308,10 +308,9 @@ internal sealed class PublicFictionSource : IBookStorySource
             ChapterKey(target) == ChapterKey(url);
         var document = await ReadHtmlAsync(url, Matches, token).ConfigureAwait(false);
         var canonical = document.Html.DocumentNode.SelectSingleNode("//link[@rel='canonical' and @href]");
-        bool CanonicalMatches(Uri target) => Matches(target) ||
-            (_site.Owns(target) && target.Scheme == Uri.UriSchemeHttps &&
-                (_site.CanonicalMayBeSiteHomepage && target.PathAndQuery == "/" ||
-                    _site.CanonicalMayIdentifyWork && _site.Work(target).Success && WorkKey(target) == WorkKey(url)));
+        bool CanonicalMatches(Uri target) => Matches(target) || _site.CanonicalMayIdentifyWork &&
+            _site.Owns(target) && target.Scheme == Uri.UriSchemeHttps && _site.Work(target).Success &&
+            WorkKey(target) == WorkKey(url);
         if (canonical is not null && (!TryLink(document.Url, canonical, out var target) || !CanonicalMatches(target)))
             throw new InvalidDataException("Канонический адрес страницы ведёт к другому произведению или главе.");
         return document;

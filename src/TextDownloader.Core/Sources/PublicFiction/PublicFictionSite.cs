@@ -25,7 +25,6 @@ internal sealed class PublicFictionSite(
     public string? WorkFromChapter { get; init; }
     public bool QueryIsRoute { get; init; }
     public bool CanonicalMayIdentifyWork { get; init; }
-    public bool CanonicalMayBeSiteHomepage { get; init; }
     public bool ReverseContents { get; init; }
     public bool SortContentsByChapterNumber { get; init; }
     public string? AllowStandalone { get; init; }

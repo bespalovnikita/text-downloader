@@ -2,8 +2,9 @@ namespace TextDownloader.Core;
 
 internal static partial class PublicFictionSites
 {
-    private const string SquarespaceReader = "//article//div[contains(concat(' ',normalize-space(@class),' '),' sqs-html-content ') " +
-        "and not(ancestor::footer) and string-length(normalize-space(.))>100]";
+    private const string SquarespaceReader = "//article//*[contains(concat(' ',normalize-space(@class),' '),' e-content ') or " +
+        "contains(concat(' ',normalize-space(@class),' '),' entry-content ')]" +
+        "[.//div[contains(concat(' ',normalize-space(@class),' '),' sqs-html-content ')]]";
 
     static partial void AddBatch07(Dictionary<int, PublicFictionSite[]> batches) => batches.Add(7,
     [
@@ -42,14 +43,13 @@ internal static partial class PublicFictionSites
             NextChapter = "//a[@href and (normalize-space(.)='Next Chapter' or normalize-space(.)='Next' or @rel='next')]",
             WorkFromChapter = "/novels/${work}/"
         },
-        new("Sunovels", "https://sunovels.com/", "sunovels.com",
-            @"/novel/(?<work>[a-z0-9-]+)/?", @"/novel/(?<work>[a-z0-9-]+)/(?<part>[0-9]+(?:\.[0-9]+)?)/?",
-            "//div[contains(concat(' ',normalize-space(@class),' '),' chapter-content ')]")
+        new("NovelRare", "https://novelrare.com/library/", "novelrare.com",
+            @"/novel/(?<work>[a-z0-9-]+)/?", @"/novel/(?<work>[a-z0-9-]+)/(?<part>chapter-[a-z0-9.-]+)/?",
+            "//div[contains(concat(' ',normalize-space(@class),' '),' ne-reader-chapter-text ')]")
         {
-            FirstChapter = "(//div[contains(@class,'header-links')]//a[@href and contains(@href,'/novel/')])[1]",
-            NextChapter = "//a[@class='nextchap' and @href and @href!='#']",
-            CanonicalMayBeSiteHomepage = true,
-            WorkFromChapter = "/novel/${work}"
+            FirstChapter = "(//a[normalize-space(.)='Start Reading' and @href])[1]",
+            NextChapter = "//a[@href and starts-with(normalize-space(.),'Next') and contains(@href,'/chapter-')]",
+            WorkFromChapter = "/novel/${work}/"
         },
         new("Athena Translations", "https://athenatls.com/novels/", "athenatls.com",
             @"/novel/(?<work>[a-z0-9-]+)/?", @"/(?<work>[a-z0-9-]+?)-(?<part>(?:vol|volume|chapter|prologue|epilogue|extra)-[a-z0-9-]+)/?",
@@ -60,13 +60,14 @@ internal static partial class PublicFictionSites
                 "(contains(@href,'-chapter-') or contains(@href,'-prologue') or contains(@href,'-epilogue') or contains(@href,'-extra-'))]",
             ContentsDefinesChapterMembership = true
         },
-        new("FictionHunt", "https://fictionhunt.com/", "fictionhunt.com",
-            @"/stories/(?<work>[a-z0-9]+/[a-z0-9-]+)/?", @"/stories/(?<work>[a-z0-9]+/[a-z0-9-]+)/chapters/(?<part>[0-9]+)/?",
-            "//*[contains(concat(' ',normalize-space(@class),' '),' js-chapter-content ') or @id='chapter-content']")
+        new("FireflyFans.net", "https://www.fireflyfans.net/bluesunroom", "www.fireflyfans.net",
+            @"/(?i:bluesunroom/details)/(?<work>[0-9]+)/?", "(?!)",
+            "//div[contains(concat(' ',normalize-space(@class),' '),' fanfic ')]")
         {
-            ChapterTitle = "//h2[contains(@class,'js-chapter-title')] | //title",
-            Contents = "//a[contains(@href,'/chapters/') and @href]",
-            WorkFromChapter = "/stories/${work}"
+            CatalogLinks = "//a[@href and normalize-space(.) and contains(@href,'/Details/')]",
+            WorkTitle = "//main//h2[normalize-space()] | //title",
+            ChapterTitle = "//main//h2[normalize-space()] | //title",
+            AllowStandalone = "//div[contains(concat(' ',normalize-space(@class),' '),' fanfic ')]"
         },
         new("FicWad", "https://ficwad.com/category/44", "ficwad.com",
             @"/story/(?<work>[0-9]+)/?", @"/story/(?<work>(?<part>[0-9]+))/?", "//*[@id='storytext']")
@@ -79,7 +80,7 @@ internal static partial class PublicFictionSites
         },
         new("Fuyu Neko Translations", "https://www.fuyuneko.org/work", "www.fuyuneko.org",
             @"/(?<work>[a-z][a-z0-9]{2,10})/?",
-            @"/(?:alpaca|bamboo-spirit|blog-1|blog-2|capybara|fuyu-02|manatee)/(?<work>[a-z0-9-]+)/(?<part>[a-z0-9.-]+)/?",
+            @"/(?:alpaca|bamboo-spirit|blog-1|blog-2|capybara|fuyu-02|manatee)/(?<work>[a-z0-9-]+)/(?<part>ch-?(?<sequence>[0-9]+)(?:-[a-z0-9-]+)?)/?",
             SquarespaceReader)
         {
             CatalogLinks = "//div[contains(@class,'project-description')]//a[@href and not(contains(@href,'?'))] | " +
