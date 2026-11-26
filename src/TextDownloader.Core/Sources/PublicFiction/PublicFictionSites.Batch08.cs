@@ -6,9 +6,26 @@ internal static partial class PublicFictionSites
     [
         EfictionArchive("Nine Lives", "www.ninelivesarchive.com", ""),
         EfictionArchive("Midnight Whispers", "midnightwhispers.net", ""),
-        EfictionArchive("Ashwinder", "ashwinder.sycophanthex.com", "", useHome: true),
         EfictionArchive("Chaos", "chaos.sycophanthex.com", ""),
-        EfictionArchive("Occlumency", "occlumency.sycophanthex.com", "", useHome: true),
+        new("RPG Novels", "https://rpgnovels.com/active-projects/", "rpgnovels.com",
+            @"/(?<work>[a-z0-9-]+)/?", @"/(?<work>[a-z0-9-]+?)_ch(?<part>[0-9][a-z0-9.-]*)/?",
+            EntryContent)
+        {
+            CatalogLinks = "//div[contains(@class,'entry-content')]//a[@href]",
+            WorkTitle = "//h1[contains(@class,'wp-block-post-title')]",
+            ChapterTitle = "//h1[contains(@class,'wp-block-post-title')]",
+            FirstChapter = "(//div[contains(@class,'entry-content')]//a[contains(@href,'_ch1/') and @href])[1]",
+            FirstChapterMayUseDifferentSlug = true,
+            NextChapter = "//a[(normalize-space(.)='Next' or starts-with(normalize-space(.),'Next Chapter')) and @href and @href!='#']"
+        },
+        new("Novello", "https://novello.id/", "novello.id",
+            @"/book/(?<work>[a-z0-9-]+)/?", @"/book/(?<work>[a-z0-9-]+)/chapter/(?<part>[0-9]+(?:\.[0-9]+)?)/?",
+            "//div[contains(concat(' ',normalize-space(@class),' '),' reading-text ')]")
+        {
+            FirstChapter = "//a[normalize-space(.)='Mulai Baca' and @href]",
+            NextChapter = "//a[(@rel='next' or contains(@aria-label,'Selanjutnya') or contains(normalize-space(.),'Bab Berikutnya')) and @href]",
+            WorkFromChapter = "/book/${work}"
+        },
         EfictionArchive("Lumos", "lumos.sycophanthex.com", ""),
         new("Sink Into Your Eyes", "https://www.siye.co.uk/", "www.siye.co.uk",
             @"/(?:siye/)?viewstory\.php\?sid=(?<work>[0-9]+)",
@@ -52,12 +69,12 @@ internal static partial class PublicFictionSites
         },
     ]);
 
-    private static PublicFictionSite EfictionArchive(string name, string host, string directory, bool useHome = false)
+    private static PublicFictionSite EfictionArchive(string name, string host, string directory)
     {
         string story = directory + "/viewstory.php";
         string route = directory + @"/viewstory\.php\?sid=(?<work>[0-9]+)";
         const string fiction = "//*[@id='story'] | //span[@style='font-size: 100%;']";
-        return new PublicFictionSite(name, "https://" + host + directory + (useHome ? "/" : "/browse.php?type=titles"), host,
+        return new PublicFictionSite(name, "https://" + host + directory + "/browse.php?type=titles", host,
             route, route + @"(?:&textsize=[-0-9]+)?(?:&chapter=(?<part>[1-9][0-9]*))?(?:&textsize=[-0-9]+)?",
             fiction)
         {
