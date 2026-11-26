@@ -3,7 +3,8 @@
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  Title="Обновления — Text Downloader" Width="600" Height="370" MinWidth="520" MinHeight="340"
  WindowStartupLocation="CenterOwner" ResizeMode="CanMinimize"
- Background="#111318" Foreground="#EEF1F8" FontFamily="Segoe UI" Closing="OnClosing">
+ Background="{DynamicResource WindowBrush}" Foreground="{DynamicResource TextBrush}"
+ FontFamily="Segoe UI Variable, Segoe UI" FontSize="13" UseLayoutRounding="True" Closing="OnClosing">
  <Window.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries>
   <ResourceDictionary Source="/TextDownloader;component/Styles.xaml" />
  </ResourceDictionary.MergedDictionaries></ResourceDictionary></Window.Resources>
@@ -26,7 +27,7 @@
   <WrapPanel Grid.Row="4" HorizontalAlignment="Right">
    <Button x:Name="CheckButton" Content="Проверить" Click="OnCheck" IsEnabled="{Binding CanCheck}"/>
    <Button x:Name="CancelOperationButton" Content="Отменить" Click="OnCancel" IsEnabled="{Binding CanCancel}"/>
-   <Button x:Name="InstallButton" Content="Обновить и перезапустить" Background="{StaticResource AccentBrush}" Click="OnInstall" IsEnabled="{Binding CanInstall}"/>
+   <Button x:Name="InstallButton" Content="Обновить и перезапустить" Style="{StaticResource PrimaryButton}" Click="OnInstall" IsEnabled="{Binding CanInstall}"/>
   </WrapPanel>
  </Grid>
 </Window>

@@ -53,19 +53,24 @@ internal static class Program
         var window = new MainWindow(profile, () => new FakeSource(network), enableTray: false);
         window.Show();
         await window.Ready.WaitAsync(TimeSpan.FromSeconds(10));
-        Assert(!((Button)window.FindName("CopyQueueUrlButton")).IsEnabled &&
-            !((Button)window.FindName("CopyDownloadUrlButton")).IsEnabled, "Copy URL was enabled without a selection");
+        Assert(!((Button)window.FindName("QueueActionsButton")).IsEnabled && !window.CanStart,
+            "Empty queue offered download actions");
+        var settings = (Expander)window.FindName("SettingsExpander");
+        Assert(!settings.IsExpanded && !((Expander)window.FindName("JournalExpander")).IsExpanded,
+            "Secondary panels were expanded by default");
+        settings.IsExpanded = true;
         window.OutputDirectory = Path.Combine(Root, "books");
         var delayInput = (TextBox)window.FindName("PageDelayInput");
-        delayInput.SetCurrentValue(TextBox.TextProperty, "0,09");
-        Assert(!window.CanStart && window.PageDelayError.Length > 0, "Delay below the minimum was accepted");
-        delayInput.SetCurrentValue(TextBox.TextProperty, "0,1");
-        Assert(window.CanStart && window.PageDelayError.Length == 0, "Minimum delay was rejected");
 
         // Add through the actual routed button, normalising a later page and a duplicate.
         ((TextBox)window.FindName("UrlInput")).Text = "https://sefan.ru/stories/ru/2/drama/fixture_1-2.html\nhttps://sefan.ru/stories/ru/2/drama/fixture_1.html";
         Click(window, "AddButton");
         await UntilAsync(() => window.Items.Count == 1, "Add button did not populate queue");
+        delayInput.SetCurrentValue(TextBox.TextProperty, "0,09");
+        Assert(!window.CanStart && window.PageDelayError.Length > 0, "Delay below the minimum was accepted");
+        delayInput.SetCurrentValue(TextBox.TextProperty, "0,1");
+        Assert(window.CanStart && window.PageDelayError.Length == 0, "Minimum delay was rejected");
+        settings.IsExpanded = false;
         await window.ActivePreview.WaitAsync(TimeSpan.FromSeconds(10));
         Assert(window.Items[0].Url.EndsWith("_1.html"), "First-page normalisation");
         Assert(window.PreviewTitle == "Тестовый рассказ", "Actual preview binding");
@@ -144,7 +149,7 @@ internal static class Program
         network.HoldNextFirstPage = true;
         Click(restored, "PreviewButton");
         await network.SlowPreviewStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        Click(restored, "RepeatSelectedButton");
+        ClickQueueAction(restored, "RepeatSelectedItem");
         Click(restored, "StartButton");
         await restored.ActiveSession.WaitAsync(TimeSpan.FromSeconds(10));
         await restored.ActivePreview.WaitAsync(TimeSpan.FromSeconds(10));
@@ -194,21 +199,30 @@ internal static class Program
         var previousClipboard = Clipboard.GetDataObject();
         try
         {
-            var queue = (ListBox)window.FindName("QueueList");
+            var queue = (DataGrid)window.FindName("QueueGrid");
             queue.SetCurrentValue(Selector.SelectedItemProperty, window.Items[0]);
-            Click(window, "CopyQueueUrlButton");
+            ClickQueueAction(window, "CopyQueueUrlItem");
             Assert(Clipboard.GetText() == window.Items[0].Url, "Queue copy did not copy the selected completed item's URL");
 
-            var downloads = (DataGrid)window.FindName("DownloadsGrid");
-            downloads.SetCurrentValue(Selector.SelectedItemProperty, window.Items[1]);
-            Click(window, "CopyDownloadUrlButton");
-            Assert(Clipboard.GetText() == window.Items[1].Url, "Downloads copy did not copy the selected failed item's URL");
+            queue.SetCurrentValue(Selector.SelectedItemProperty, window.Items[1]);
+            ClickQueueAction(window, "CopyQueueUrlItem");
+            Assert(Clipboard.GetText() == window.Items[1].Url, "Changing the selected row did not change the copied URL");
         }
         finally
         {
             if (previousClipboard is null) Clipboard.Clear();
             else Clipboard.SetDataObject(previousClipboard, true);
         }
+    }
+
+    private static void ClickQueueAction(MainWindow window, string name)
+    {
+        Click(window, "QueueActionsButton");
+        var menu = ((Button)window.FindName("QueueActionsButton")).ContextMenu;
+        var item = menu.Items.OfType<MenuItem>().Single(action => action.Name == name);
+        Assert(menu.IsOpen && item.IsEnabled, "Unavailable queue action: " + name);
+        item.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+        menu.IsOpen = false;
     }
 
     private static async Task ManualRecoveryAsync()
@@ -263,6 +277,9 @@ internal static class Program
         await window.StartAsync().WaitAsync(TimeSpan.FromSeconds(10));
         var importButton = (Button)window.FindName("ImportRecoveryPageButton");
         Assert(importButton.IsVisible && importButton.IsEnabled, "HTML import is unavailable after a failed page");
+        var browserButton = (Button)window.FindName("BrowserRecoveryButton");
+        Assert(browserButton.IsVisible && browserButton.IsEnabled && !window.CanStart,
+            "A failed item must allow browser recovery while the normal queue start is unavailable");
 
         string htmlPath = Path.Combine(Root, "saved-page.txt");
         string Page(string address) => $"""
@@ -406,6 +423,7 @@ internal static class Program
         public Uri ValidatePageRoute(Uri first, Uri candidate, int? number) => _urls.ValidatePageRoute(first, candidate, number);
         public Uri ValidateReplacementPage(Uri expected, Uri candidate) => _urls.ValidateReplacementPage(expected, candidate);
         public bool CanImportSavedPage(Uri uri) => _urls.CanImportSavedPage(uri);
+        public bool CanReadInBrowser(Uri uri) => _urls.CanReadInBrowser(uri);
         public Task<StoryPage> ReadSavedPageAsync(Uri expected, Stream html, CancellationToken token) =>
             _urls.ReadSavedPageAsync(expected, html, token);
         public async Task<StoryPage> GetPageAsync(Uri uri, bool confirmAdult, CancellationToken cancellationToken)
