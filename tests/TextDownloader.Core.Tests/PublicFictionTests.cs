@@ -66,6 +66,9 @@ internal static class PublicFictionTests
 
     public static async Task<int> RunLiveAsync(string[] filter)
     {
+        var registered = PublicFictionSites.All.ToArray();
+        Require(registered.Select(site => site.Host).Distinct(StringComparer.OrdinalIgnoreCase).Count() == registered.Length,
+            "Each registered public-fiction host must belong to only one batch.");
         var batches = PublicFictionSites.Batches;
         PublicFictionSite[] sites;
         if (filter is ["--batch", var value] &&
@@ -125,7 +128,8 @@ internal static class PublicFictionTests
             {
                 try
                 {
-                    Require(router.CanHandle(work), "The application router does not recognize the catalog entry.");
+                    Require(router.CanHandle(work) && router.Describe(work).Name == site.Name,
+                        "The application router did not select the adapter under test.");
                     var page = await new StoryDownloader(router, temp.Path).PreviewAsync(work, false, timeout.Token);
                     var paragraphs = StoryDownloader.JoinParagraphs([page]);
                     Require(router.CanHandle(page.Url) && page.Number == 1 && !string.IsNullOrWhiteSpace(page.Title) &&
