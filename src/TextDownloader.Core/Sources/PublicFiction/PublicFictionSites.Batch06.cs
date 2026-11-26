@@ -4,14 +4,15 @@ internal static partial class PublicFictionSites
 {
     static partial void AddBatch06(Dictionary<int, PublicFictionSite[]> batches) => batches.Add(6,
     [
-        new("Royal Road", "https://www.royalroad.com/fictions/best-rated", "www.royalroad.com",
-            @"/fiction/(?<work>[0-9]+)(?:/[^/]+)?/?",
-            @"/fiction/(?<work>[0-9]+)/(?<slug>[^/]+)/chapter/(?<part>[0-9]+)(?:/[^/]+)?/?",
-            "//div[contains(concat(' ',normalize-space(@class),' '),' chapter-content ')]")
+        new("BabelNovel", "https://babelnovel.com/", "babelnovel.com",
+            @"/books/(?<work>[a-z0-9-]+)/?", @"/books/(?<work>[a-z0-9-]+)/chapters/(?<part>c[0-9]+(?:-[0-9]+)?)/?",
+            "//article[starts-with(@class,'chapter_container')]/section")
         {
-            Contents = "//table[@id='chapters']//tr[contains(@class,'chapter-row')]/td[1]/a[@href]",
-            Author = "//meta[@property='books:author']",
-            WorkFromChapter = "/fiction/${work}/${slug}"
+            ChapterTitle = "//title",
+            FirstChapter = "(//a[contains(@class,'chapter-item_container') and " +
+                "substring(@href,string-length(@href)-2)='/c1'])[1]",
+            NextChapter = "//a[@rel='next' and @href and @href!='#']",
+            WorkFromChapter = "/books/${work}"
         },
         new("Fanfictions.fr", "https://www.fanfictions.fr/", "www.fanfictions.fr",
             @"/fanfictions/(?<work>[^/]+/[0-9]+_[^/]+)/chapters\.html",
@@ -34,29 +35,26 @@ internal static partial class PublicFictionSites
             ChapterFromOption = "/s/${work}/{number}",
             WorkFromChapter = "/s/${work}/1"
         },
-        new("Sink Into Your Eyes", "https://www.siye.co.uk/", "www.siye.co.uk",
-            @"/(?:siye/)?viewstory\.php\?sid=(?<work>[0-9]+)",
-            @"/(?:siye/)?viewstory\.php\?sid=(?<work>[0-9]+)(?:&chapter=(?<part>[0-9]+))?(?:&textsize=[-0-9]+)?",
-            "//span[@style='font-size: 100%;']")
+        new("RanobeHub", "https://ranobehub.org/", "ranobehub.org",
+            @"/ranobe/(?<work>[a-z0-9-]+)/?", @"/ranobe/(?<work>[a-z0-9-]+)/chapter/(?<part>[0-9]+)/?",
+            "//div[contains(concat(' ',normalize-space(@class),' '),' reader-content ')]")
         {
-            QueryIsRoute = true,
-            WorkTitle = "//title",
-            ChapterTitle = "//title",
-            Contents = "//a[contains(@href,'&chapter=') and not(contains(@href,'&textsize=')) and not(contains(@href,'action='))]",
-            AllowStandalone = "//span[@style='font-size: 100%;']",
-            WorkFromChapter = "/viewstory.php?sid=${work}"
+            Contents = "//div[contains(@class,'book-chapter-viewport') and contains(@class,'is-complete')]" +
+                "//a[starts-with(@id,'chapter-list-') and @href]",
+            ReverseContents = true,
+            WorkFromChapter = "/ranobe/${work}"
         },
-        new("EFP Fanfiction", "https://efpfanfic.net/browse.php?type=recent", "efpfanfic.net",
-            @"/viewstory\.php\?sid=(?<work>[0-9]+)(?:&i=1)?",
-            @"/viewstory\.php\?sid=(?<work>[0-9]+)(?:&i=(?<part>[1-9][0-9]*))?",
-            "//div[@class='storia']")
+        new("FAQWiki", "https://faqwiki.xyz/", "faqwiki.xyz",
+            @"/(?![a-z0-9-]+-chapter-[a-z0-9.-]+/?$)(?<work>[a-z0-9-]+)/?",
+            @"/(?<work>[a-z0-9-]+?)-(?<part>chapter-[a-z0-9.-]+)/?", EntryContent)
         {
-            QueryIsRoute = true,
-            WorkTitle = "//title",
-            ChapterTitle = "//title",
-            Contents = "//select[@name='sid']/option[contains(@value,'viewstory.php')]",
-            AllowStandalone = "//div[@class='storia']",
-            WorkFromChapter = "/viewstory.php?sid=${work}"
+            CatalogLinks = "//div[contains(@class,'entry-content')]//a[@href]",
+            WorkTitle = "//h1[@class='entry-title']",
+            ChapterTitle = "//h1[@class='entry-title']",
+            FirstChapter = "(//div[contains(@class,'entry-content')]//a[contains(@href,'-chapter-1/') and @href])[1]",
+            NextChapter = "//a[contains(concat(' ',normalize-space(@class),' '),' next-chapter ') and @href and @href!='#']",
+            ExcludeContent = ".//div[contains(@class,'code-block')]",
+            WorkFromChapter = "/${work}/"
         },
         new("Twisting the Hellmouth", "https://www.tthfanfic.org/latest.php", "www.tthfanfic.org",
             @"/(?:T-[0-9]+/)?Story-(?<work>[0-9]+)(?:/[^/]+\.htm)?/?",
@@ -70,14 +68,15 @@ internal static partial class PublicFictionSites
             ExcludeContent = ".//h3[1]",
             WorkFromChapter = "/Story-${work}"
         },
-        new("Central Novel", "https://centralnovel.com/", "centralnovel.com",
-            @"/series/(?<work>[a-z0-9-]+)/?",
-            @"/(?<work>[a-z0-9-]+?)-(?<part>capitulo-[a-z0-9.-]+)/?",
-            "//div[contains(concat(' ',normalize-space(@class),' '),' epcontent ')]")
+        new("Exiled Rebels", "https://exiledrebelsscanlations.com/novels/", "exiledrebelsscanlations.com",
+            @"/novels/(?<work>[a-z0-9-]+)/?",
+            @"/(?<work>[a-z0-9-]+?)-(?<part>chapter-[a-z0-9.-]+)/?",
+            EntryContent)
         {
-            FirstChapter = "//div[contains(@class,'inepcx')]/a[starts-with(normalize-space(.),'Primeiro Capítulo') and @href]",
-            NextChapter = NextByRel,
-            WorkFromChapter = "/series/${work}/"
+            FirstChapter = "(//div[contains(@class,'entry-content')]//a[contains(@href,'-chapter-1/') and @href])[1]",
+            NextChapter = "//a[normalize-space(.)='Next Chapter' and @href and @href!='#']",
+            ExcludeContent = ".//div[contains(@class,'sharedaddy')]",
+            WorkFromChapter = "/novels/${work}/"
         },
         new("Tsundoku", "https://tsundoku.com.br/", "tsundoku.com.br",
             @"/manga/(?<work>[a-z0-9-]+)/?",
@@ -98,13 +97,20 @@ internal static partial class PublicFictionSites
             NextChapter = "//a[contains(@class,'nextprev') and normalize-space(.)='Next' and @href]",
             WorkFromChapter = "/series/${work}/"
         },
-        new("顶点小说", "https://www.ddtxt8.cc/", "www.ddtxt8.cc",
-            @"/book/(?<work>[0-9]+)/?", @"/book/(?<work>[0-9]+)/(?<part>[0-9]+)\.html",
-            "//*[@id='content']")
+        new("The Original Naruto Fanfiction Archive", "https://narutofic.org/browse.php?type=titles", "narutofic.org",
+            @"/viewstory\.php\?sid=(?<work>[0-9]+)",
+            @"/viewstory\.php\?sid=(?<work>[0-9]+)(?:&textsize=[-0-9]+)?(?:&chapter=(?<part>[1-9][0-9]*))?(?:&textsize=[-0-9]+)?",
+            "//*[@id='story']")
         {
-            FirstChapter = "//a[@class='rl' and @href]",
-            NextChapter = "//a[normalize-space(.)='下一章' and @href and @href!='#']",
-            WorkFromChapter = "/book/${work}/"
+            QueryIsRoute = true,
+            WorkTitle = "//title",
+            ChapterTitle = "//title",
+            Contents = "//*[@id='chapters']//a[contains(@href,'&chapter=')] | " +
+                "//select[@name='chapter']/option[contains(@value,'viewstory.php')]",
+            NextChapter = "//*[@id='next']/a[@href and contains(@href,'&chapter=')] | " +
+                "//a[@class='next' and contains(@href,'&chapter=')]",
+            AllowStandalone = "//*[@id='story']",
+            WorkFromChapter = "/viewstory.php?sid=${work}"
         },
     ]);
 }
