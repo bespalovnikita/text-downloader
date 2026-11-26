@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Xml.Linq;
 using TextDownloader.Core;
@@ -61,13 +62,23 @@ internal static class PublicFictionTests
 
     public static async Task<int> RunLiveAsync(string[] filter)
     {
-        bool latestBatch = filter is ["--latest-batch"];
-        var sites = latestBatch ? PublicFictionSites.Batches[^1] : PublicFictionSites.All.Where(site => filter.Length == 0 ||
-            filter.Contains(site.Host, StringComparer.OrdinalIgnoreCase)).ToArray();
-        if (latestBatch ? sites.Length != 10 : sites.Length == 0 ||
+        var batches = PublicFictionSites.Batches;
+        PublicFictionSite[] sites;
+        if (filter is ["--batch", var value] &&
+            int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out int number) &&
+            batches.TryGetValue(number, out var batch))
+            sites = batch;
+        else if (filter is ["--latest-batch"])
+            sites = batches[batches.Keys.Max()];
+        else
+            sites = PublicFictionSites.All.Where(site => filter.Length == 0 ||
+                filter.Contains(site.Host, StringComparer.OrdinalIgnoreCase)).ToArray();
+
+        bool byBatch = filter.FirstOrDefault() is "--batch" or "--latest-batch";
+        if (byBatch ? sites.Length != 10 : sites.Length == 0 ||
             (filter.Length > 0 && sites.Length != filter.Distinct(StringComparer.OrdinalIgnoreCase).Count()))
         {
-            Console.Error.WriteLine("Expected ten sites in the latest batch or a list of supported hostnames.");
+            Console.Error.WriteLine("Expected ten sites in the requested batch or a list of supported hostnames.");
             return 2;
         }
 

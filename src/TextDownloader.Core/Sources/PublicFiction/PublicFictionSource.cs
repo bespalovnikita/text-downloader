@@ -274,11 +274,15 @@ internal sealed class PublicFictionSource : IBookStorySource
             .Where(candidate => candidate.Length > 80)
             .OrderByDescending(candidate => candidate.Length)
             .Take(4)
-            .Select(candidate => candidate.Node.Name + "#" + Attribute(candidate.Node, "id") + "." +
-                string.Join(".", Attribute(candidate.Node, "class").Split(' ', StringSplitOptions.RemoveEmptyEntries)));
+            .Select(candidate => candidate.Node.Name + "#" + MarkupIdentifier(Attribute(candidate.Node, "id")) + "." +
+                string.Join(".", Attribute(candidate.Node, "class").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+                    .Take(8).Select(MarkupIdentifier)));
         _log.Report(new DownloadLogEvent(DownloadLogLevel.Detail,
             $"Разметка текста {url.GetLeftPart(UriPartial.Path)}: {string.Join(", ", shapes)}"));
     }
+
+    private static string MarkupIdentifier(string value) =>
+        new(value.Where(character => char.IsLetterOrDigit(character) || character is '_' or '-').Take(80).ToArray());
 
     private async Task<LoadedPage> ReadStoryAsync(Uri url, CancellationToken token)
     {

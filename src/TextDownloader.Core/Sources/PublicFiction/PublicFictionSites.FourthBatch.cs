@@ -43,7 +43,7 @@ internal static partial class PublicFictionSites
             NextChapter = "//div[@class='reader-next-item']/a[@href and @href!='#']",
             WorkFromChapter = "/${work}.html"
         },
-        new("Second Life Translations", "https://secondlifetranslations.com/", "secondlifetranslations.com",
+        new("Second Life Translations", "https://secondlifetranslations.com/translations/", "secondlifetranslations.com",
             @"/novel/(?<work>[a-z0-9-]+)/?", @"/(?<work>[a-z0-9-]+)/(?<part>[a-z0-9.-]+)/?", EntryContent)
         {
             FirstChapter = "//a[@class='startreadingbtn' and @href]",
@@ -67,7 +67,7 @@ internal static partial class PublicFictionSites
             SortContentsByChapterNumber = true,
             WorkFromChapter = "/${work}/"
         },
-        new("Psychfic", "https://www.psychfic.com/", "www.psychfic.com",
+        new("Psychfic", "https://www.psychfic.com/browse.php?type=recent", "www.psychfic.com",
             @"/viewstory\.php\?sid=(?<work>[0-9]+)", @"/viewstory\.php\?sid=(?<work>[0-9]+)(?:&textsize=[0-9]+)?(?:&chapter=(?<part>[0-9]+))?",
             "//*[@id='story']")
         {
@@ -81,7 +81,7 @@ internal static partial class PublicFictionSites
         },
         new("Portkey Archive", "https://portkey-archive.org/ship/harry-and-hermione", "portkey-archive.org",
             @"/story/(?<work>[0-9]+)/?", @"/story/(?<work>[0-9]+)/(?<part>[0-9]+)/?",
-            "//main//*[contains(concat(' ',normalize-space(@class),' '),' prose ') and .//p]")
+            "//div[@class='chapter-text']")
         {
             Contents = "//li[contains(@class,'chapter-list__item')]/a[@href]",
             Author = "//p[@class='story-head__byline']/a[1]",
@@ -89,7 +89,7 @@ internal static partial class PublicFictionSites
         },
         new("Stories of Arda", "https://storiesofarda.com/", "storiesofarda.com",
             @"/story/(?<work>[0-9]+)/?", @"/story/(?<work>[0-9]+)/chapter/(?<part>[0-9]+)/?",
-            "//main//*[contains(concat(' ',normalize-space(@class),' '),' plain-text ') and (./p or ./br)]")
+            "//main//article[contains(concat(' ',normalize-space(@class),' '),' chapter-text ')]")
         {
             ChapterTitle = "//main//h1[1]",
             Contents = "//main//li[contains(@class,'mb-1')]/a[contains(@href,'/chapter/')]",
