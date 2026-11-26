@@ -10,7 +10,6 @@ internal sealed class PublicFictionSite(
 
     public string Name { get; } = name;
     public Uri Catalog { get; } = new(catalog);
-    public Uri? AlternateCatalog { get; init; }
     public string Host { get; } = readingHost;
     public string Content { get; } = content;
     public string CatalogLinks { get; init; } = "//a[@href]";

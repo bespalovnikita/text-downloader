@@ -81,8 +81,8 @@ https://bestweapon.cc/post_124145
   NovelRare, Divine Dao Library, NoBadNovel, Lazy Girl Translations, Jobnib,
   Snowy Codex, TeaNovel, Novel Mania, Dobytranslations, Asura Scans,
   NovelFrance, MegaNovel, Light Novel Translations, Revenger Novels,
-  Dusk Blossoms, Virlyce, IndoWebNovel, NovelFull.net, Second Life Translations,
-  LabNovel, MyDramaNovel, Psychfic, Portkey Archive и Stories of Arda.
+  Dusk Blossoms, Virlyce, IndoWebNovel, NovelFull.net, WordRain,
+  LabNovel, MyDramaNovel, Sky Demon Order, Portkey Archive и Stories of Arda.
 - На Sefan состав цикла берётся из оглавления. Каталоги, поиск и страницы
   анонсов `_nova.html` не обрабатываются.
 - На Bestweapon состав и порядок цикла определяются по оглавлению публикации.

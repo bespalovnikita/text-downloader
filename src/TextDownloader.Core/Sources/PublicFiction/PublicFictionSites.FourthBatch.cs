@@ -43,13 +43,14 @@ internal static partial class PublicFictionSites
             NextChapter = "//div[@class='reader-next-item']/a[@href and @href!='#']",
             WorkFromChapter = "/${work}.html"
         },
-        new("Second Life Translations", "https://secondlifetranslations.com/translations/", "secondlifetranslations.com",
-            @"/novel/(?<work>[a-z0-9-]+)/?", @"/(?<work>[a-z0-9-]+)/(?<part>[a-z0-9.-]+)/?", EntryContent)
+        new("WordRain", "https://wordrain69.com/", "wordrain69.com",
+            @"/manga/(?<work>[a-z0-9-]+)/?", @"/manga/(?<work>[a-z0-9-]+)/(?<part>[a-z0-9.-]+)/?",
+            MadaraText)
         {
-            FirstChapter = "//a[@class='startreadingbtn' and @href]",
-            NextChapter = "//li[@class='srznavlinext']/a[@href and @href!='#']",
-            ExcludeContent = ".//ul[@class='srznavul']",
-            WorkFromChapter = "/novel/${work}/"
+            FirstChapter = "//a[@id='btn-read-last' and @href and @href!='#']",
+            NextChapter = "//a[contains(concat(' ',normalize-space(@class),' '),' next_page ') and @href and @href!='#']",
+            WorkFromChapter = "/manga/${work}/",
+            CanonicalMayIdentifyWork = true
         },
         new("LabNovel", "https://labnovel.ru/", "labnovel.ru",
             @"/(?<work>[a-z0-9-]+)/?", @"/(?<work>[a-z0-9-]+)/(?<part>glava-[a-z0-9.-]+)/?",
@@ -67,18 +68,13 @@ internal static partial class PublicFictionSites
             SortContentsByChapterNumber = true,
             WorkFromChapter = "/${work}/"
         },
-        new("Psychfic", "https://www.psychfic.com/browse.php?type=titles", "www.psychfic.com",
-            @"/viewstory\.php\?sid=(?<work>[0-9]+)", @"/viewstory\.php\?sid=(?<work>[0-9]+)(?:&textsize=[0-9]+)?(?:&chapter=(?<part>[0-9]+))?",
-            "//*[@id='story']")
+        new("Sky Demon Order", "https://skydemonorder.com/", "skydemonorder.com",
+            @"/projects/(?<work>[a-z0-9-]+)/?", @"/projects/(?<work>[a-z0-9-]+)/(?<part>[0-9]+-[a-z0-9.-]+)/?",
+            "//*[@id='chapter-body']")
         {
-            QueryIsRoute = true,
-            AlternateCatalog = new Uri("https://www.psychfic.com/"),
-            WorkTitle = "//title",
-            ChapterTitle = "//title",
-            FirstChapter = "//*[@id='output']//a[contains(@href,'&chapter=1') and @href][1]",
-            NextChapter = "//*[@id='next']/a[@class='next' and @href]",
-            AllowStandalone = "//*[@id='story']",
-            WorkFromChapter = "/viewstory.php?sid=${work}"
+            FirstChapter = "//a[normalize-space(.)='Start Reading' and @href]",
+            NextChapter = "//a[@aria-label='Next chapter' and @href]",
+            WorkFromChapter = "/projects/${work}"
         },
         new("Portkey Archive", "https://portkey-archive.org/ship/harry-and-hermione", "portkey-archive.org",
             @"/story/(?<work>[0-9]+)/?", @"/story/(?<work>[0-9]+)/(?<part>[0-9]+)/?",
