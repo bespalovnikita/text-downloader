@@ -16,6 +16,7 @@ internal static class Program
     private static async Task<int> Main(string[] args)
     {
         if (args.Length > 0 && args[0] == "--update-crash") return UpdateTests.RunCrashChild(args);
+        if (args.Length > 0 && args[0] == "--live-public-sites") return await PublicFictionTests.RunLiveAsync(args[1..]);
         if (args.Length > 0)
         {
             Console.Error.WriteLine("These tests run offline and accept no arguments.");
@@ -45,6 +46,8 @@ internal static class Program
             ("A corrected URL retries the pending page without changing the story", ManualPageRecovery),
             ("Preview does not download the entire story", Preview),
             ("A new registered source can use the common page downloader", RegisteredSource),
+            ("Public fiction downloads a book in contents order and resumes from verified pages", PublicFictionTests.VerifyBookAndCacheAsync),
+            ("Public fiction rejects chapters of another work", PublicFictionTests.RejectForeignChapterAsync),
             ("Sefan selector collects earlier and later chapters and resumes within a chapter", SefanSeriesTests.InlineContentsAndResumeAsync),
             ("Sefan uses a separate contents page and rejects gaps", SefanSeriesTests.SeparateContentsAsync),
             ("Sefan standalone stories skip the no-contents link and retry from saved pages", SefanSeriesTests.NoContentsMarkerAndCachedRetryAsync),

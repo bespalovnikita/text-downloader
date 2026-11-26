@@ -7,5 +7,6 @@
   <ItemGroup>
     <InternalsVisibleTo Include="TextDownloader.Core.Tests" />
     <PackageReference Include="HtmlAgilityPack" Version="1.11.71" />
+    <InternalsVisibleTo Include="TextDownloader.Core.Tests" />
   </ItemGroup>
 </Project>
