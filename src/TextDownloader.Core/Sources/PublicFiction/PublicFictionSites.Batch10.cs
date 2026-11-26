@@ -2,6 +2,9 @@ namespace TextDownloader.Core;
 
 internal static partial class PublicFictionSites
 {
+    private const string SilmarillionTitle = "//div[contains(concat(' ',normalize-space(@class),' '),' views-field-body ')]" +
+        "//div[contains(concat(' ',normalize-space(@class),' '),' fanwork-listing ')]/h1";
+
     static partial void AddBatch10(Dictionary<int, PublicFictionSite[]> batches) => batches.Add(10,
     [
         FanficPlatform("Fanfic.es", "fanfic.es", "/popular"),
@@ -12,11 +15,12 @@ internal static partial class PublicFictionSites
             ".//div[contains(@class,'views-field-field-chapter-text')]]")
         {
             CatalogLinks = "//a[contains(@href,'/fanwork') and @href]",
-            WorkTitle = "//*[contains(concat(' ',normalize-space(@class),' '),' fanwork-title ') " +
-                "or contains(concat(' ',normalize-space(@class),' '),' views-field-title ')] | //main//h1[normalize-space()]",
+            WorkTitle = SilmarillionTitle,
+            ChapterTitle = SilmarillionTitle,
             ContentsPath = "/node/${work}/fanwork",
             AllowStandalone = "//*[contains(@class,'views-field-field-chapter-text')]",
-            ExcludeContent = ".//summary | .//*[contains(concat(' ',normalize-space(@class),' '),' views-field ') " +
+            ExcludeContent = ".//summary | .//details[./h4[normalize-space(.)='Chapter End Notes']] | " +
+                ".//*[contains(concat(' ',normalize-space(@class),' '),' views-field ') " +
                 "and not(contains(@class,'views-field-field-chapter-text'))]"
         },
         new("Novel Oku", "https://novelokur.com.tr/rankings/", "novelokur.com.tr",
