@@ -13,6 +13,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Threading;
 using Microsoft.Win32;
@@ -62,7 +63,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         set
         {
             if (!Set(ref _selectedItem, value)) return;
+            Changed(nameof(HasSelection));
+            Changed(nameof(HasSelectedBook));
             Changed(nameof(CanCopySelectedUrl));
+            Changed(nameof(CanRepeatSelected));
             if (JournalSelectedOnly) JournalView.Refresh();
             RefreshPageRecovery();
             if (_initialized && !IsUpdating) _previewTask = PreviewSelectedAsync(value);
@@ -108,7 +112,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool IsBusy
     {
         get => _isBusy;
-        private set { if (Set(ref _isBusy, value)) { Changed(nameof(CanStart)); Changed(nameof(CanEditSettings)); Changed(nameof(StartLabel)); CurrentUpdateWindow?.RefreshInstallEligibility(); } }
+        private set
+        {
+            bool focusStart = StartButton.IsKeyboardFocused;
+            bool focusStop = PauseButton.IsKeyboardFocused || CancelButton.IsKeyboardFocused;
+            if (!Set(ref _isBusy, value)) return;
+            NotifyCommandAvailability();
+            if (value && focusStart) PauseButton.Focus();
+            if (!value && focusStop)
+            {
+                Button next = CanStart ? StartButton : RetryButton;
+                if (!next.Focus()) UrlInput.Focus();
+            }
+            CurrentUpdateWindow?.RefreshInstallEligibility();
+        }
     }
     private bool _isUpdating;
     public bool IsUpdating
@@ -117,17 +134,24 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         private set
         {
             if (!Set(ref _isUpdating, value)) return;
-            Changed(nameof(CanStart)); Changed(nameof(CanEditSettings));
-            Changed(nameof(CanReceiveInput)); Changed(nameof(CanCopySelectedUrl)); Changed(nameof(CanOpenUpdates));
+            NotifyCommandAvailability();
         }
     }
-    public bool CanStart => _initialized && _validPageDelay && !IsBusy && !IsUpdating && !_closing && _store.CanWrite && !_saveFailed;
+    public bool CanStartSession => CanReceiveInput && _validPageDelay && !IsBusy && _store.CanWrite && !_saveFailed;
+    public bool CanStart => CanStartSession && Items.Any(item => item.Status is QueueStatus.Queued or QueueStatus.Paused);
     public bool CanEditSettings => !IsBusy && !IsUpdating && !_closing;
     public bool CanReceiveInput => _initialized && !IsUpdating && !_closing;
-    public bool CanCopySelectedUrl => CanReceiveInput && SelectedItem is not null;
-    public bool CanOpenUpdates => _initialized && !IsUpdating && !_closing;
-    public string StartLabel => Items.Any(q => q.Status == QueueStatus.Paused) ? "▶ Продолжить очередь" : "▶ Скачать очередь";
-    public string QueueCountText => $"{Items.Count} · готово {Items.Count(q => q.Status == QueueStatus.Completed)}";
+    public bool HasQueueItems => Items.Count > 0;
+    public bool HasSelection => SelectedItem is not null;
+    public bool HasSelectedBook => SelectedItem is { Files.Count: > 0 };
+    public bool CanCopySelectedUrl => CanReceiveInput && HasSelection;
+    public bool CanRepeatSelected => CanReceiveInput && CanEditSettings && HasSelection;
+    public bool CanRemoveSelected => CanReceiveInput && QueueGrid.SelectedItems.Cast<QueueItem>().Any(item => item.Status != QueueStatus.Running);
+    public bool CanClearCompleted => CanReceiveInput && Items.Any(item => item.Status == QueueStatus.Completed);
+    public bool CanRetry => CanReceiveInput && CanEditSettings && Items.Any(item => item.Status is QueueStatus.Failed or QueueStatus.Cancelled);
+    public bool CanOpenUpdates => CanReceiveInput;
+    public string StartLabel => Items.Any(q => q.Status == QueueStatus.Paused) ? "Продолжить очередь" : "Скачать очередь";
+    public string QueueCountText => HasQueueItems ? $"Всего {Items.Count} · готово {Items.Count(q => q.Status == QueueStatus.Completed)}" : "";
     public BookFormat Format { get => _settings.Format; set { if (IsUpdating) return; _settings.Format = value; Changed(); ScheduleSave(); } }
     public string OutputDirectory { get => _settings.OutputDirectory; set { if (IsUpdating) return; _settings.OutputDirectory = value; Changed(); ScheduleSave(); } }
     public bool ConfirmAdult { get => _settings.ConfirmAdult; set { if (IsUpdating) return; _settings.ConfirmAdult = value; Changed(); ScheduleSave(); } }
@@ -150,17 +174,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 ScheduleSave();
             }
             Changed(nameof(PageDelayError));
-            Changed(nameof(CanStart));
+            NotifyStartAvailability();
         }
     }
     public string PageDelayError => _validPageDelay ? "" : "Введите задержку в секундах, от 0,1.";
-    private string _currentStatus = "Добавьте ссылку на страницу чтения.";
+    private string _currentStatus = "";
     public string CurrentStatus { get => _currentStatus; private set => Set(ref _currentStatus, value); }
-    private string _previewTitle = "Выберите произведение";
+    private string _previewTitle = "Выберите произведение в очереди";
     public string PreviewTitle { get => _previewTitle; private set => Set(ref _previewTitle, value); }
-    private string _previewMetadata = "EPUB / FB2";
+    private string _previewMetadata = "";
     public string PreviewMetadata { get => _previewMetadata; private set => Set(ref _previewMetadata, value); }
-    private string _previewStatus = "Сведения загружаются при выборе строки.";
+    private string _previewStatus = "";
     public string PreviewStatus { get => _previewStatus; private set => Set(ref _previewStatus, value); }
     private string _previewText = "";
     public string PreviewText { get => _previewText; private set => Set(ref _previewText, value); }
@@ -183,7 +207,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _updateTargetDirectory = Path.GetFullPath(updateTargetDirectory ?? AppContext.BaseDirectory);
         InitializeComponent();
         DataContext = this;
-        Items.CollectionChanged += (_, _) => { Changed(nameof(QueueCountText)); Changed(nameof(StartLabel)); RefreshPageRecovery(); ScheduleSave(); };
+        Items.CollectionChanged += (_, _) =>
+        {
+            Changed(nameof(HasQueueItems));
+            NotifyQueueState();
+            RefreshPageRecovery();
+            ScheduleSave();
+        };
         _saveTimer.Tick += async (_, _) => { _saveTimer.Stop(); await SaveSafelyAsync(); };
         Loaded += OnLoaded;
     }
@@ -211,10 +241,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Changed(nameof(PageDelayError));
             foreach (QueueItem item in saved.Queue) Attach(item);
             foreach (HistoryEntry entry in saved.History) History.Add(entry);
-            QueueColumn.Width = new GridLength(Clamp(_settings.QueueWidth, 250, Math.Max(250, ActualWidth * .35)));
-            PreviewColumn.Width = new GridLength(Clamp(_settings.PreviewWidth, 250, Math.Max(250, ActualWidth * .35)));
+            PreviewColumn.Width = new GridLength(double.IsFinite(_settings.PreviewWidth)
+                ? Math.Max(PreviewColumn.MinWidth, _settings.PreviewWidth)
+                : PreviewColumn.Width.Value);
             foreach (string property in new[] { nameof(Format), nameof(OutputDirectory), nameof(ConfirmAdult), nameof(RefreshCache), nameof(MinimizeToTray) }) Changed(property);
-            CurrentStatus = Items.Count > 0 ? "Очередь восстановлена. Загрузка начнётся после нажатия «Скачать»." : "Добавьте ссылку на страницу чтения.";
+            CurrentStatus = HasQueueItems ? "Очередь восстановлена." : "";
             Log($"Text Downloader {typeof(MainWindow).Assembly.GetName().Version}; профиль: {_store.DirectoryPath}");
         }
         catch (Exception error)
@@ -225,8 +256,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         finally
         {
             _initialized = true;
-            Changed(nameof(CanStart));
-            Changed(nameof(CanReceiveInput)); Changed(nameof(CanCopySelectedUrl)); Changed(nameof(CanOpenUpdates));
+            NotifyCommandAvailability();
             _ready.TrySetResult(true);
             if (_enableTray && !_closing) CreateTray();
             if (saveCleanup) ScheduleSave();
@@ -270,7 +300,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
             catch (Exception error) { rejected++; Log("Ссылка отклонена: " + error.Message, DownloadLogLevel.Warning); }
         }
-        CurrentStatus = $"Добавлено: {added}." + (rejected > 0 ? $" Не поддерживаются: {rejected}. Нужна ссылка на поддерживаемую страницу чтения." : "");
+        CurrentStatus = added == 0 && rejected == 0
+            ? "Все ссылки уже есть в очереди."
+            : $"Добавлено: {added}." + (rejected > 0 ? $" Не поддерживаются: {rejected}. Нужна ссылка на поддерживаемую страницу чтения." : "");
         Log(CurrentStatus, rejected > 0 ? DownloadLogLevel.Warning : DownloadLogLevel.Information);
         if (first is not null) SelectedItem = first;
         await SaveSafelyAsync();
@@ -280,9 +312,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         item.PropertyChanged += (_, change) =>
         {
-            Changed(nameof(QueueCountText));
-            Changed(nameof(StartLabel));
-            if (change.PropertyName == nameof(QueueItem.Status)) RefreshPageRecovery();
+            if (change.PropertyName == nameof(QueueItem.Status))
+            {
+                NotifyQueueState();
+                if (SelectedItem == item) Changed(nameof(HasSelectedBook));
+                RefreshPageRecovery();
+            }
             ScheduleSave();
         };
         Items.Add(item);
@@ -295,16 +330,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _previewStop?.Dispose();
         _previewStop = new CancellationTokenSource();
         CancellationToken token = _previewStop.Token;
-        PreviewTitle = item?.DisplayTitle ?? "Выберите произведение";
-        PreviewMetadata = item is null ? "EPUB / FB2" : new Uri(item.Url).Host + " · EPUB / FB2";
+        PreviewTitle = item?.DisplayTitle ?? "Выберите произведение в очереди";
+        PreviewMetadata = item is null ? "" : new Uri(item.Url).Host;
         PreviewText = "";
-        PreviewStatus = item is null ? "" : "Получаем сведения…";
-        if (item is null) return;
-        if (!force && item.Status is (QueueStatus.Failed or QueueStatus.Paused) && item.Checkpoint?.PendingPageUrl is not null)
-        {
-            PreviewStatus = item.Message;
-            return;
-        }
+        PreviewStatus = "";
+        if (item is null || (!force && item == RecoveryItem)) return;
+        PreviewStatus = "Получаем сведения…";
         bool confirmAdult = ConfirmAdult;
         TimeSpan pageDelay = _settings.GetPageDelay();
         var url = new Uri(item.Url);
@@ -348,7 +379,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         await Ready;
         if (!CanStart) return;
         QueueItem[] pending = Items.Where(item => item.Status is QueueStatus.Queued or QueueStatus.Paused).ToArray();
-        if (pending.Length == 0) { CurrentStatus = "Нет ожидающих заданий. Для ошибок нажмите «Повторить ошибки»."; return; }
         await StartSessionAsync(pending, RefreshCache);
     }
 
@@ -535,17 +565,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (!_initialized || !_store.CanWrite) return;
         _saveTimer.Stop();
-        _settings.QueueWidth = QueueColumn.ActualWidth;
-        _settings.PreviewWidth = PreviewColumn.ActualWidth;
+        _settings.PreviewWidth = PreviewColumn.Width.Value;
         try
         {
             await _store.SaveAsync(new StateSnapshot { Settings = _settings, Queue = Items.ToList(), History = History.ToList() });
-            if (_saveFailed) { _saveFailed = false; Changed(nameof(CanStart)); }
+            if (_saveFailed) { _saveFailed = false; NotifyStartAvailability(); }
         }
         catch
         {
             _saveFailed = true;
-            Changed(nameof(CanStart));
+            NotifyStartAvailability();
             throw;
         }
     }
@@ -562,12 +591,58 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         field = value; Changed(name); return true;
     }
     private void Changed([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-    private static double Clamp(double value, double min, double max) => double.IsFinite(value) ? Math.Clamp(value, min, max) : min;
+    private void NotifyStartAvailability()
+    {
+        Changed(nameof(CanStartSession));
+        Changed(nameof(CanStart));
+    }
+
+    private void NotifyCommandAvailability()
+    {
+        NotifyStartAvailability();
+        Changed(nameof(CanEditSettings));
+        Changed(nameof(CanReceiveInput));
+        Changed(nameof(CanCopySelectedUrl));
+        Changed(nameof(CanRepeatSelected));
+        Changed(nameof(CanRemoveSelected));
+        Changed(nameof(CanClearCompleted));
+        Changed(nameof(CanRetry));
+        Changed(nameof(CanOpenUpdates));
+    }
+
+    private void NotifyQueueState()
+    {
+        Changed(nameof(QueueCountText));
+        Changed(nameof(StartLabel));
+        Changed(nameof(CanStart));
+        Changed(nameof(CanRetry));
+        Changed(nameof(CanClearCompleted));
+        Changed(nameof(CanRemoveSelected));
+    }
+
+    private void OnQueueActions(object sender, RoutedEventArgs e)
+    {
+        var button = (Button)sender;
+        button.ContextMenu.PlacementTarget = button;
+        button.ContextMenu.IsOpen = true;
+    }
+
+    private void OnQueueSelectionChanged(object sender, SelectionChangedEventArgs e) => Changed(nameof(CanRemoveSelected));
 
     private async void OnAdd(object sender, RoutedEventArgs e) { await AddUrlsAsync(UrlInput.Text); UrlInput.Clear(); }
     private async void OnPaste(object sender, RoutedEventArgs e)
     {
-        try { if (Clipboard.ContainsText()) { UrlInput.Text = Clipboard.GetText(); await AddUrlsAsync(UrlInput.Text); UrlInput.Clear(); } }
+        try
+        {
+            if (!Clipboard.ContainsText())
+            {
+                CurrentStatus = "В буфере обмена нет текста.";
+                return;
+            }
+            UrlInput.Text = Clipboard.GetText();
+            await AddUrlsAsync(UrlInput.Text);
+            UrlInput.Clear();
+        }
         catch (Exception error) { CurrentStatus = "Не удалось прочитать буфер: " + error.Message; }
     }
 
@@ -591,7 +666,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void OnCancel(object sender, RoutedEventArgs e) => Cancel();
     private void OnRetry(object sender, RoutedEventArgs e)
     {
-        if (IsUpdating || _closing) return;
+        if (!CanRetry) return;
+        bool moveFocus = RetryButton.IsKeyboardFocused;
         foreach (QueueItem item in Items.Where(q => q.Status is QueueStatus.Failed or QueueStatus.Cancelled))
         {
             item.ResumeDownload = true;
@@ -601,6 +677,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         CurrentStatus = "Нажмите «Скачать очередь», чтобы повторить задания.";
         ScheduleSave();
+        if (moveFocus && !StartButton.Focus()) UrlInput.Focus();
     }
     private void RefreshPageRecovery()
     {
@@ -649,7 +726,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void OnBrowserRecovery(object sender, RoutedEventArgs e)
     {
-        if (!CanStart || !CanRecoverInBrowser || RecoveryItem is not { } item) return;
+        if (!CanStartSession || !CanRecoverInBrowser || RecoveryItem is not { } item) return;
         await StartSessionAsync([item], refresh: false, useBrowser: true);
     }
 
@@ -717,7 +794,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void OnRepeatSelected(object sender, RoutedEventArgs e)
     {
         if (IsBusy || IsUpdating || _closing) return;
-        var selected = QueueList.SelectedItems.Cast<QueueItem>().ToArray();
+        var selected = QueueGrid.SelectedItems.Cast<QueueItem>().ToArray();
         if (selected.Length == 0 && SelectedItem is not null) selected = new[] { SelectedItem };
         foreach (QueueItem item in selected)
         {
@@ -733,7 +810,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void OnRemove(object sender, RoutedEventArgs e)
     {
         if (IsUpdating || _closing) return;
-        var selected = QueueList.SelectedItems.Cast<QueueItem>().ToArray();
+        var selected = QueueGrid.SelectedItems.Cast<QueueItem>().ToArray();
         if (selected.Length == 0 && SelectedItem is not null) selected = new[] { SelectedItem };
         foreach (QueueItem item in selected.Where(item => item.Status != QueueStatus.Running)) Items.Remove(item);
         if (SelectedItem is not null && !Items.Contains(SelectedItem)) SelectedItem = null;
@@ -782,7 +859,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
     private void OnPreview(object sender, RoutedEventArgs e) { if (!IsUpdating && !_closing) _previewTask = PreviewSelectedAsync(SelectedItem, force: true); }
     private void OnOpenBook(object sender, RoutedEventArgs e) { if (SelectedItem is not null) OpenBook(SelectedItem.Files.FirstOrDefault()); }
-    private void OnQueueDoubleClick(object sender, MouseButtonEventArgs e) { if (SelectedItem?.Status == QueueStatus.Completed) OpenBook(SelectedItem.Files.FirstOrDefault()); }
+    private void OnQueueDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Left || e.OriginalSource is not DependencyObject source) return;
+        if (ItemsControl.ContainerFromElement(QueueGrid, source) is DataGridRow { Item: QueueItem { Status: QueueStatus.Completed } item })
+            OpenBook(item.Files.FirstOrDefault());
+    }
     private void OnShowBook(object sender, RoutedEventArgs e) { if (SelectedItem is not null) OpenBookFolder(SelectedItem.Files.FirstOrDefault()); }
     private void OnOpenFolder(object sender, RoutedEventArgs e) => OpenFolder(OutputDirectory);
     private void OpenFolder(string? path)
@@ -874,7 +956,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Log(message);
         if (_store.CanWrite && !_saveFailed) CurrentStatus = message;
     }
-    private void OnSplitterChanged(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e) => ScheduleSave();
+    private void OnWorkspaceSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (!e.WidthChanged) return;
+        PreviewColumn.MaxWidth = Math.Max(PreviewColumn.MinWidth, e.NewSize.Width - QueueColumn.MinWidth - SplitterColumn.Width.Value);
+    }
+    private void OnSplitterChanged(object sender, DragCompletedEventArgs e) => ScheduleSave();
+    private void OnSplitterKeyUp(object sender, KeyEventArgs e) { if (e.Key is Key.Left or Key.Right) ScheduleSave(); }
 
     private void CreateTray()
     {
@@ -907,8 +995,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         e.Cancel = true;
         if (_closing) return;
         _closing = true;
-        Changed(nameof(CanStart));
-        Changed(nameof(CanEditSettings)); Changed(nameof(CanReceiveInput)); Changed(nameof(CanCopySelectedUrl)); Changed(nameof(CanOpenUpdates));
+        NotifyCommandAvailability();
         _saveTimer.Stop();
         _previewStop?.Cancel();
         var updateWindow = CurrentUpdateWindow;
@@ -933,7 +1020,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             PendingAppUpdate = null;
             _closing = false;
             IsUpdating = false;
-            Changed(nameof(CanStart)); Changed(nameof(CanEditSettings)); Changed(nameof(CanReceiveInput)); Changed(nameof(CanCopySelectedUrl)); Changed(nameof(CanOpenUpdates));
+            NotifyCommandAvailability();
             CurrentStatus = "Перезапуск отменён: " + error.Message;
             Log(CurrentStatus, DownloadLogLevel.Error);
             return;
