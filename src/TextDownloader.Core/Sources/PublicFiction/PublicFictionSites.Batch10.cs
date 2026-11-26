@@ -5,7 +5,7 @@ internal static partial class PublicFictionSites
     static partial void AddBatch10(Dictionary<int, PublicFictionSite[]> batches) => batches.Add(10,
     [
         FanficPlatform("Fanfic.es", "fanfic.es", "/popular"),
-        FanficPlatform("Книга Фанфиков", "ficbook.net", "/popular"),
+        FanficPlatform("Книга Фанфиков", "ficbook.net", "/fanfiction"),
         new("Silmarillion Writers' Guild", "https://www.silmarillionwritersguild.org/most-recent/writing/fiction",
             "www.silmarillionwritersguild.org", @"/node/(?<work>[0-9]+)(?:/fanwork)?/?", "(?!)",
             "//div[contains(concat(' ',normalize-space(@class),' '),' view-content ') and " +
@@ -22,8 +22,9 @@ internal static partial class PublicFictionSites
         new("Novel Oku", "https://novelokur.com.tr/rankings/", "novelokur.com.tr",
             @"/novel/(?<work>[a-z0-9-]+)/?", @"/chapter/(?<part>[a-z0-9-]+)/?", "//*[@id='chapterContent']")
         {
-            Contents = "//a[contains(concat(' ',normalize-space(@class),' '),' chapter-item ') and not(contains(concat(' ',normalize-space(@class),' '),' locked ')) " +
-                "and starts-with(@href,'/chapter/')]",
+            Contents = "//a[contains(concat(' ',normalize-space(@class),' '),' chapter-item ') " +
+                "and not(contains(concat(' ',normalize-space(@class),' '),' locked ')) and contains(@href,'/chapter/')]",
+            FirstChapter = "(//a[contains(@href,'/chapter/') and contains(normalize-space(.),'OKUMAYA BAŞLA')])[1]",
             ContentsDefinesChapterMembership = true,
             ReverseContents = true
         },
@@ -50,7 +51,9 @@ internal static partial class PublicFictionSites
             @"/(?<section>translations|originals)/(?<work>[a-z0-9-]+)/?",
             @"/(?<section>translations|originals)/(?<work>[a-z0-9-]+)/(?<part>[a-z0-9-]+(?:/[a-z0-9-]+)?)/?", EntryContent)
         {
-            Contents = "//div[contains(@class,'entry-content')]//a[@href and " +
+            CatalogLinks = "//article[contains(@class,'type-page')]//a[@href and not(contains(@href,'/most-popular/'))]",
+            Contents = "//*[@id='content']//article[contains(@class,'type-page')]//a[@href and " +
+                "(contains(@href,'/translations/') or contains(@href,'/originals/')) and " +
                 "(contains(@href,'/chapter-') or contains(@href,'/prologue') or contains(@href,'/epilogue'))]",
             WorkFromChapter = "/${section}/${work}/"
         },
@@ -86,7 +89,7 @@ internal static partial class PublicFictionSites
             @"/readfic/(?<work>[0-9]+)(?:-[^/]+)?/(?<part>[0-9]+)/?",
             "//*[@id='content' and contains(concat(' ',normalize-space(@class),' '),' part_text ')]")
         {
-            CatalogLinks = "//a[contains(@class,'visit-link') and starts-with(@href,'/readfic/')]",
+            CatalogLinks = "//a[starts-with(@href,'/readfic/') or contains(@href,'/readfic/')]",
             ChapterTitle = "//article[@id='part_content']//h2 | //h1[contains(@class,'heading')]",
             Author = "//a[contains(@href,'/authors/') and normalize-space(.)]",
             Contents = "//a[contains(concat(' ',normalize-space(@class),' '),' part-link ') and starts-with(@href,'/readfic/')]",
