@@ -97,7 +97,7 @@ internal static partial class PublicFictionSites
             @"/category/translatedtales/(?<work>[^/]+)/?", @"/translatedtales/(?<work>[^/]+)/(?<part>[^/]+/[0-9]{4}/[0-9]{2}/[0-9]{2})/?",
             "//*[@id='content' and contains(@class,'article-font')]")
         {
-            WorkTitle = "//h3[contains(@class,'inform-title')]",
+            WorkTitle = "//title",
             ChapterTitle = "//title",
             Contents = "//div[@class='chapitre']//a[contains(@href,'/translatedtales/')]",
             WorkFromChapter = "/category/translatedtales/${work}/"
