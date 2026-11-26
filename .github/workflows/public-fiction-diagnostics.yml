@@ -1,0 +1,103 @@
+name: Public fiction catalog diagnostics
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/public-fiction-diagnostics.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  probes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Inspect catalog and reader markup
+        run: |
+          python3 -m pip install --quiet lxml
+          python3 - <<'PY'
+          from concurrent.futures import ThreadPoolExecutor
+          from urllib.error import HTTPError
+          from urllib.parse import urljoin, urlsplit
+          from urllib.request import Request, urlopen
+          from lxml.html import fromstring
+
+          urls = {
+              "siye": "https://www.siye.co.uk/viewstory.php?sid=130812",
+              "efp": "https://efpfanfic.net/search.php?action=recent",
+              "ddtxt": "https://www.ddtxt8.cc/book/198/",
+              "sleepy": "https://sleepytranslations.com/series/loves-affliction/",
+              "ckanda": "https://ckandawrites.online/after-mistakenly-binding-the-matchmaker-system/",
+              "tiger": "https://tigertranslations.org/my-beloved-dog-is-the-strongest-in-another-world/",
+              "gravity": "https://gravitytales.com/story/make-the-immortal-sect-great-again/",
+              "trek": "https://trekfanfiction.net/hawku/star-trek-phoenix-x-sto-unofficial-literary-challenge-19-the-officer-exchange/",
+              "scifi": "https://scifistories.com/s/1544/door-to-door",
+              "novelspl": "https://www.novels.pl/novel/Reborn-as-the-Doomed-Heir-of-a-Mage-Dynasty",
+              "nine": "https://www.ninelivesarchive.com/viewstory.php?sid=2158",
+              "lumos": "https://lumos.sycophanthex.com/viewstory.php?sid=2865",
+              "chaos": "https://chaos.sycophanthex.com/viewstory.php?sid=2179",
+              "midnight": "https://midnightwhispers.net/viewstory.php?sid=4510",
+              "twilighted": "https://www.twilighted.net/",
+              "fanfictalk": "https://fanfictalk.com/archive/",
+              "faloo": "https://b.faloo.com/1520829.html",
+              "sfacg": "https://book.sfacg.com/Novel/785681/",
+              "17k": "https://www.17k.com/book/3684636.html",
+              "luminare": "https://luminaretranslations.com/series/fun-with-music/",
+              "rpg": "https://rpgnovels.com/amazing-village-building/",
+              "fictionhunt": "https://fictionhunt.com/stories/7b44mry/the-day-after-happily-ever-after-book-i-the-life-we-are-given",
+              "wuxia": "https://www.wuxiaworld.com/novel/ready-set-apocalypse",
+              "novelcool": "https://www.novelcool.com/category/original.html",
+              "novelzhen": "https://novelzhen.com/",
+              "ranah": "https://ranahnovel.com/",
+              "novello": "https://novello.id/",
+              "central": "https://centralnovel.com/lista-a-z/",
+              "ao3": "https://archiveofourown.org/collections/Yuletide2025/works",
+          }
+
+          def clean(value, limit=200):
+              return " ".join(value.split())[:limit]
+
+          def describe(node):
+              return clean(node.tag + "#" + node.get("id", "") + "." + node.get("class", ""), 130)
+
+          def probe(item):
+              name, url = item
+              try:
+                  with urlopen(Request(url, headers={"User-Agent": "TextDownloader/1.0", "Accept": "text/html,application/xhtml+xml"}), timeout=9) as response:
+                      response_url = response.geturl()
+                      html = response.read(5 * 1024 * 1024)
+                      doc = fromstring(html)
+                  text = [f"{name} {response_url} {len(html)} {clean(doc.xpath('string(//title)'))}"]
+                  text.append("head " + repr([(describe(h), len(h.text_content())) for h in doc.xpath("//h1|//h2")[:7]]))
+                  props = {describe(a):sum(len(p.text_content()) for p in a.xpath("./p")) for a in doc.xpath("//p/parent::* | //div[./br]")}
+                  text.append("prose " + repr(sorted(props.items(), key=lambda x:-x[1])[:6]))
+                  links = {}
+                  for node in doc.xpath("//a[@href]|//option[@value]"):
+                      path = node.get("href", node.get("value",""))
+                      target = urlsplit(urljoin(response_url, path))
+                      if not path or path.startswith(("#", "javascript:")) or target.hostname != urlsplit(response_url).hostname:
+                          continue
+                      short = clean(node.text_content(), 55)
+                      rank = 0
+                      signals = ("chapter", "read first", "first chapter", "start reading", "contents", "next", "/book/", "/novel/", "viewstory", "s/", "chapit", "开始", "第一", "阅读")
+                      mark = " ".join((path, short, node.get("id",""), node.get("class",""))).lower()
+                      if any(k in mark for k in signals):
+                          rank += 5
+                      if "first" in mark or "chapter-1/" in mark or "starts" in mark:
+                          rank += 4
+                      absolute = target.path + (("?" + target.query) if target.query else "")
+                      if absolute in links:
+                          continue
+                      links[absolute] = (rank, clean(absolute,160), short, describe(node))
+                  text.append("links " + repr([entry[1:] for entry in sorted(links.values(), key=lambda x:-x[0])[:12]]))
+                  return "\n".join(text)
+              except HTTPError as error:
+                  return f"{name} HTTP {error.code} {error.geturl()}"
+              except Exception as error:
+                  return f"{name} {error}"
+
+          with ThreadPoolExecutor(max_workers=6) as pool:
+              for result in pool.map(probe, urls.items()):
+                  print(result, flush=True)
+          PY
