@@ -151,7 +151,23 @@ internal sealed class PublicFictionSource : IBookStorySource
     // Catalogs are used by the opt-in integration tests. Reading URLs still follow the normal router.
     internal async Task<IReadOnlyList<Uri>> ReadCatalogAsync(CancellationToken token)
     {
-        var catalog = _site.Catalog;
+        if (_site.AlternateCatalog is not { } alternate)
+            return await ReadCatalogAsync(_site.Catalog, token).ConfigureAwait(false);
+
+        try
+        {
+            var choices = await ReadCatalogAsync(_site.Catalog, token).ConfigureAwait(false);
+            if (choices.Count >= 2) return choices;
+        }
+        catch (Exception error) when (!token.IsCancellationRequested && error is HttpRequestException or InvalidDataException)
+        {
+            _log?.Report(new DownloadLogEvent(DownloadLogLevel.Detail, error.Message));
+        }
+        return await ReadCatalogAsync(alternate, token).ConfigureAwait(false);
+    }
+
+    private async Task<IReadOnlyList<Uri>> ReadCatalogAsync(Uri catalog, CancellationToken token)
+    {
         var document = await ReadHtmlAsync(catalog, target => PublicFictionSite.IsWeb(target) &&
             target.Scheme == Uri.UriSchemeHttps && catalog.IdnHost == target.IdnHost &&
             catalog.AbsolutePath == target.AbsolutePath, token).ConfigureAwait(false);
@@ -292,9 +308,10 @@ internal sealed class PublicFictionSource : IBookStorySource
             ChapterKey(target) == ChapterKey(url);
         var document = await ReadHtmlAsync(url, Matches, token).ConfigureAwait(false);
         var canonical = document.Html.DocumentNode.SelectSingleNode("//link[@rel='canonical' and @href]");
-        bool CanonicalMatches(Uri target) => Matches(target) || _site.CanonicalMayIdentifyWork &&
-            _site.Owns(target) && target.Scheme == Uri.UriSchemeHttps && _site.Work(target).Success &&
-            WorkKey(target) == WorkKey(url);
+        bool CanonicalMatches(Uri target) => Matches(target) ||
+            (_site.Owns(target) && target.Scheme == Uri.UriSchemeHttps &&
+                (_site.CanonicalMayBeSiteHomepage && target.PathAndQuery == "/" ||
+                    _site.CanonicalMayIdentifyWork && _site.Work(target).Success && WorkKey(target) == WorkKey(url)));
         if (canonical is not null && (!TryLink(document.Url, canonical, out var target) || !CanonicalMatches(target)))
             throw new InvalidDataException("Канонический адрес страницы ведёт к другому произведению или главе.");
         return document;

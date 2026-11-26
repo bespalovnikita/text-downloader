@@ -32,14 +32,15 @@ internal static partial class PublicFictionSites
             Contents = "//main//a[@href and (contains(@href,'/ch-') or contains(@href,'/ch0') or contains(@href,'/chapter'))]",
             ContentsDefinesChapterMembership = true
         },
-        new("Chereads", "https://www.chereads.com/", "www.chereads.com",
-            @"/novel/(?<work>[0-9]+)/?", @"/novel/(?<work>[0-9]+)/(?<part>[0-9]+)/?",
-            "//main[@id='content']")
+        new("Snowy Codex", "https://snowycodex.com/novels/", "snowycodex.com",
+            @"/novels/(?<work>[a-z0-9-]+)/?", @"/novels/(?<work>[a-z0-9-]+)/(?<part>[a-z0-9.-]+)/?", EntryContent)
         {
-            WorkTitle = "//h1[normalize-space()] | //title",
-            FirstChapter = "(//ul[contains(@class,'ChapterItems_list')]//a[@href])[1]",
-            NextChapter = "//a[@href and (normalize-space(.)='Next Chapter' or @rel='next')]",
-            WorkFromChapter = "/novel/${work}"
+            WorkTitle = "//h1[@class='entry-title']",
+            ChapterTitle = "//h1[@class='entry-title'] | //title",
+            FirstChapter = "(//div[contains(concat(' ',normalize-space(@class),' '),' entry-content ')]//a[@href and " +
+                "(contains(@href,'/chapter-1/') or contains(@href,'/prologue/'))])[1]",
+            NextChapter = "//a[@href and (normalize-space(.)='Next Chapter' or normalize-space(.)='Next' or @rel='next')]",
+            WorkFromChapter = "/novels/${work}/"
         },
         new("Sunovels", "https://sunovels.com/", "sunovels.com",
             @"/novel/(?<work>[a-z0-9-]+)/?", @"/novel/(?<work>[a-z0-9-]+)/(?<part>[0-9]+(?:\.[0-9]+)?)/?",
@@ -47,6 +48,7 @@ internal static partial class PublicFictionSites
         {
             FirstChapter = "(//div[contains(@class,'header-links')]//a[@href and contains(@href,'/novel/')])[1]",
             NextChapter = "//a[@class='nextchap' and @href and @href!='#']",
+            CanonicalMayBeSiteHomepage = true,
             WorkFromChapter = "/novel/${work}"
         },
         new("Athena Translations", "https://athenatls.com/novels/", "athenatls.com",
@@ -66,12 +68,12 @@ internal static partial class PublicFictionSites
             Contents = "//a[contains(@href,'/chapters/') and @href]",
             WorkFromChapter = "/stories/${work}"
         },
-        new("FicWad", "https://ficwad.com/category/18", "ficwad.com",
+        new("FicWad", "https://ficwad.com/category/44", "ficwad.com",
             @"/story/(?<work>[0-9]+)/?", @"/story/(?<work>(?<part>[0-9]+))/?", "//*[@id='storytext']")
         {
             WorkTitle = "//title",
             ChapterTitle = "//title",
-            Contents = "//ol[not(ancestor::*) or ancestor::*[@id='storytext']]//a[starts-with(@href,'/story/') and not(contains(@href,'/reviews'))]",
+            Contents = "//*[@id='storytext']//ol//a[starts-with(@href,'/story/') and not(contains(@href,'/reviews'))]",
             ContentsDefinesChapterMembership = true,
             AllowStandalone = "//*[@id='storytext']"
         },
@@ -84,7 +86,7 @@ internal static partial class PublicFictionSites
                 "//li[contains(@class,'page-collection')]/a[@href]",
             WorkTitle = "//title",
             ChapterTitle = "//title",
-            Contents = "//main//a[@href and (contains(@href,'/ch-') or contains(@href,'/ch0'))]",
+            Contents = "//div[contains(@class,'sqs-html-content')]//a[@href and (contains(@href,'/ch-') or contains(@href,'/ch0'))]",
             SortContentsByChapterNumber = true,
             WorkFromChapter = "/${work}"
         },
