@@ -23,7 +23,7 @@ jobs:
           from urllib.request import Request, urlopen
           from lxml.html import fromstring, HTMLParser
 
-          urls = {'fanficEs': 'https://fanfic.es/popular', 'ficwad': 'https://ficwad.com/story/162133', 'ficwad2': 'https://ficwad.com/category/18', 'fictionChapter': 'https://fictionhunt.com/stories/72xvx93/norman-schneider-and-the-wands-of-tears/chapters/1', 'fringeReader': 'https://www.fringecapybara.com/married-the-male-leads-brother/ch-001', 'fringeReader2': 'https://www.fringecapybara.com/finding-my-father/ch-001', 'fuyuBook1': 'https://www.fuyuneko.org/aacw', 'fuyuBook2': 'https://www.fuyuneko.org/mstp', 'fuyuBook3': 'https://www.fuyuneko.org/sflqt', 'fuyuRead': 'https://www.fuyuneko.org/alpaca/vbms/ch-001', 'athenawork': 'https://athenatls.com/novel/the-instructor-of-aerial-combat-wizard-candidates/', 'novelspl': 'https://www.novels.pl/novel/Number-One-Lazy-Merchant-of-the-Beast-World-Novels?p=2', 'squidge1': 'https://squidgeworld.org/works/103071', 'squidge2': 'https://squidgeworld.org/works/129008', 'adastra1': 'https://www.adastrafanfic.com/works/2592', 'adastra2': 'https://www.adastrafanfic.com/works/2887', 'booknet': 'https://booknet.ua/reader/stanu-tob-tatom-b429253?c=4644577', 'litgorod': 'https://litgorod.ru/books/read/77686?chapter=1', 'wattpad': 'https://www.wattpad.com/stories/fanfiction', 'silmarillion': 'https://www.silmarillionwritersguild.org/', 'phoenix': 'https://www.phoenixsong.net/fanfiction/', 'fanficauthors': 'https://jeconais.fanficauthors.net/', 'webtruyen': 'https://webtruyendich.com/truyen/tu-bao-tien-bon/fanqie/chuong-1-nhat-cai-pha-bon', 'novelcool': 'https://www.novelcool.com/chapter/Chapter-1117-First-Encounter-with-the-Tenth-Seat/13462593/', 'bloodshed': 'https://www.bloodshedverse.com/', 'firefly': 'https://www.fireflyfans.net/bluesunroom', 'twilighted': 'https://www.twilighted.net/viewstory.php?sid=5431', 'chereads': 'https://www.chereads.com/novel/23221036805403605/62562062722717955', 'nobadnovel': 'https://www.nobadnovel.com/series/longevity-i-am-an-angel-investor-in-the-cultivation-world', 'novgo': 'https://novgo.net/profound-heaven-soul-sovereign.html', 'novelrare': 'https://novelrare.com/novel/naruto-the-wind-calamity/', 'whizzer': 'https://whatsawhizzerwebnovels.com/novel/i-reincarnated-into-a-single-celled-organism/', 'doby': 'https://dobytranslations.com/series/i-dont-want-to-be-reborn-with-you/', 'novelfrance': 'https://novelfrance.fr/novel/l-heritier-illegitime-du-plus-grand-heros', 'teanovel': 'https://www.teanovel.com/novel/i-became-a-god-in-a-horror-game', 'penguin': 'https://www.royalroad.com/fiction/21220/mother-of-learning', 'asianovel': 'https://www.asianovel.net/stories/', 'kol': 'https://kolnovel.com/series/', 'sonic': 'https://www.sonicmtl.com/novel/', 'lazybird': 'https://lazybirdtranslations.wordpress.com/novels/', 'lemon': 'https://lemontreetranslations.wordpress.com/novels/', 'novelokur': 'https://novelokur.com.tr/rankings/', 'wuxiaclick': 'https://wuxia.click/browse', 'snowycodex': 'https://snowycodex.com/novels/lmstb/', 'woopread': 'https://woopread.com/series/the-star-painting-genius'}
+          urls = {'silCatalog': 'https://www.silmarillionwritersguild.org/most-recent/writing/fiction', 'silWork': 'https://www.silmarillionwritersguild.org/node/9379', 'firefly': 'https://www.fireflyfans.net/BlueSunRoom/Details/25124', 'firefly2': 'https://www.fireflyfans.net/BlueSunRoom/Details/23831', 'fireflycat': 'https://www.fireflyfans.net/bluesunroom', 'fanficauthors': 'https://jeconais.fanficauthors.net/Motivations/index/', 'fanficachapter': 'https://jeconais.fanficauthors.net/Motivations/Motivations/', 'fanficacatalog': 'https://jeconais.fanficauthors.net/', 'novelrarec': 'https://novelrare.com/novel/naruto-the-wind-calamity/chapter-1/', 'novelfrancec': 'https://novelfrance.fr/novel/l-heritier-illegitime-du-plus-grand-heros/chapter-1', 'nobadnovelc': 'https://www.nobadnovel.com/series/longevity-i-am-an-angel-investor-in-the-cultivation-world/chapter-1-longevity-investment-system', 'woopreadc': 'https://woopread.com/series/the-star-painting-genius/chapter-1-the-shadow-and-the-swirl', 'whizzerc': 'https://whatsawhizzerwebnovels.com/novel/i-reincarnated-into-a-single-celled-organism/chapter-1-50/i-reincarnated-into-a-single-celled-organism-chapter-1/', 'wuxiaclick': 'https://wuxia.click/novel/renegade-immortal', 'booknet': 'https://booknet.ua/reader/stanu-tob-tatom-b429253?c=4644577', 'booknet2': 'https://booknet.ua/book/zrada-davai-pochnemo-spochatku-b422694', 'fanficEs': 'https://fanfic.es/popular', 'ficwadcategory': 'https://ficwad.com/category/44', 'novelokur': 'https://novelokur.com.tr/novel/dokuz-yildiz-hegemon-vucut-sanatlari/', 'sonicindex': 'https://www.sonicmtl.com/novel/i-am-the-fated-villain-aitl/', 'sonicread': 'https://www.sonicmtl.com/novel/i-am-the-fated-villain-aitl/chapter-1/', 'lemon1': 'https://lemontreetranslations.wordpress.com/di-daughters-rebirth/', 'lemon2': 'https://lemontreetranslations.wordpress.com/qt-second-female-lead/', 'lazybird1': 'https://lazybirdtranslations.wordpress.com/the-prestigious-familys-young-lady-and-the-farmer/', 'lazybird2': 'https://lazybirdtranslations.wordpress.com/the-ultimate-business-lady/', 'teanovelc': 'https://www.teanovel.com/novel/i-became-a-god-in-a-horror-game/1', 'asiannovel': 'https://www.asianovel.net/story/3925/', 'dobychapter': 'https://dobytranslations.com/i-dont-want-to-be-reborn-with-you-chapter-1/', 'kolfirst': 'https://kolnovel.com/series/منظور-قارئ-كلي-العلم/', 'snowy': 'https://snowycodex.com/novels/lmstb/chapter-1/', 'novelcoolcat': 'https://www.novelcool.com/novel/', 'novelcoolindex': 'https://www.novelcool.com/novel/Beast-Taming-Starting-from-Zero.html', 'ranobecatalog': 'https://renovels.org/catalog', 'novz': 'https://novelzhen.com/'}
 
           def clean(value, limit=200):
               return " ".join(value.split())[:limit]
@@ -39,14 +39,15 @@ jobs:
                       html = response.read(5 * 1024 * 1024)
                       doc = fromstring(html, parser=HTMLParser(encoding="utf8"))
                   text = [f"{name} {response_url} {len(html)} {clean(doc.xpath('string(//title)'))}"]
-                  text.append("head " + repr([(describe(h), len(h.text_content())) for h in doc.xpath("//h1|//h2")[:7]]))
+                  text.append("head " + repr([(describe(h), len(h.text_content())) for h in doc.xpath("//h1|//h2")[:7]]) +
+                              " canonical " + repr(doc.xpath("//link[@rel='canonical']/@href")[:3]))
                   props = {describe(a):sum(len(p.text_content()) for p in a.xpath("./p")) for a in doc.xpath("//p/parent::* | //div[./br]")}
                   blocks=[]
                   for tag in doc.xpath("//div|//section|//article|//main|//pre|//td"):
                       length=sum(len(t.strip()) for t in tag.xpath("./text()|./p/text()") if t and t.strip())
                       if length >= 100:
                           blocks.append((length,describe(tag),describe(tag.getparent())))
-                  text.append("prose " + repr(sorted(props.items(), key=lambda x:-x[1])[:5]) + "; direct " +
+                  text.append("prose " + repr(sorted(props.items(), key=lambda x:-x[1])[:3]) + "; direct " +
                               repr(sorted(blocks,reverse=True)[:7]))
                   links = {}
                   for node in doc.xpath("//a[@href]|//option[@value]"):
@@ -66,14 +67,20 @@ jobs:
                           rank += 10
                       if target.path.startswith(("/story/", "/stories/", "/fiction/", "/works/", "/read/", "/books/read/", "/chapters/", "/reader/", "/novel/", "/obra/", "/fics/", "/fanfic/")) and target.path.strip("/").count("/") > 0:
                           rank += 10
-                      if name == "fanficEs" and target.path.startswith(("/fanfics/", "/read/", "/stories/", "/works/", "/fanfic/", "/works", "/originals/", "/posts/")):
+                      if name == "fanficEs" and ("fanfic-title" in describe(node.getparent()) or any(v in mark for v in ("read_fanfic", "fanfic-title", "fanfic_name", "/fanfic/", "/readfic/", "/obra/", "/fic/"))):
                           rank += 20
-                      if name == "silmarillion" and any(t in mark for t in ("/node/", "fiction", "works", "fanwork")):
+                      if name.startswith("sil") and any(t in mark for t in ("/node/", "fiction", "works", "fanwork")):
                           rank += 20
-                      if name == "firefly" and any(t in mark for t in (".asp", "read", "bluesun", "fanfic")):
+                      if name.startswith("firefly") and any(t in mark for t in (".asp", "read", "bluesun", "fanfic")):
                           rank += 20
                       if name == "bloodshed" and any(t in mark for t in ("chapter", "story", "fic", "browse")):
                           rank += 20
+                      if name.startswith("booknet") and ("page=" in target.query or "наступ" in mark or "next" in mark):
+                          rank += 40
+                      if name.startswith("fanficac") and target.path.endswith("/index/"):
+                          rank += 35
+                      if name.startswith(("lemon", "lazybird", "novelokur", "snowy")) and ("chapter" in mark or "prologue" in mark or "bölüm" in mark):
+                          rank += 40
                       if name.startswith("novelspl"):
                           rank = 20 if "p=" in target.query or ".html" in target.path else rank
                       if name in ("fringeCatalog","fuyu","fuyu1") and any(t in mark for t in ("toc", "/vbms", "/cfm", "/chongfei", "/work", "/chapter")):
