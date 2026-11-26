@@ -73,10 +73,12 @@ internal static partial class PublicFictionSites
             @"/(?<work>[a-z0-9-]+?)-(?<part>chapter-[a-z0-9.-]+)/?",
             EntryContent)
         {
-            FirstChapter = "(//div[contains(@class,'entry-content')]//a[contains(@href,'-chapter-1/') and @href])[1]",
+            FirstChapter = "(//div[contains(@class,'lcp_catlist')]//a[contains(@href,'-chapter-1/') and @href] | " +
+                "//div[contains(@class,'entry-content')]//a[contains(@href,'-chapter-1/') and @href])[1]",
+            FirstChapterMayUseDifferentSlug = true,
             NextChapter = "//a[normalize-space(.)='Next Chapter' and @href and @href!='#']",
             ExcludeContent = ".//div[contains(@class,'sharedaddy')]",
-            WorkFromChapter = "/novels/${work}/"
+            WorkTitle = "//h1[@class='entry-title']"
         },
         new("Tsundoku", "https://tsundoku.com.br/", "tsundoku.com.br",
             @"/manga/(?<work>[a-z0-9-]+)/?",
