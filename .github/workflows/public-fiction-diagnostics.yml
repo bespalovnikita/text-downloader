@@ -1,0 +1,45 @@
+name: Public archive reader diagnostics
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/public-fiction-diagnostics.yml']
+permissions:
+  contents: read
+jobs:
+  selectors:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Locate the story title in Silmarillion Writers' Guild
+        run: |
+          python3 -m pip install --quiet lxml
+          python3 - <<'PY'
+          from concurrent.futures import ThreadPoolExecutor
+          from urllib.request import Request, urlopen
+          from lxml.html import fromstring, HTMLParser
+
+          def inspect(item):
+              number, suffix = item
+              url = f"https://www.silmarillionwritersguild.org/node/{number}{suffix}"
+              try:
+                  with urlopen(Request(url, headers={"User-Agent":"TextDownloader/1.0"}), timeout=12) as response:
+                      doc=fromstring(response.read(3*1024*1024), parser=HTMLParser(encoding="utf8"))
+                  result = [f"work {number}{suffix}"]
+                  title = doc.xpath("//h1|//h2|//h3|//h4|//div[contains(@class,'title') and not(.//div)][string-length(normalize-space(.))<140]|//meta[@property='og:title']|//title")
+                  for node in title:
+                      label = " ".join(node.get("content",node.text_content()).split())[:90]
+                      path = " > ".join(n.tag+"#"+n.get("id","")+"."+n.get("class","")[:95] for n in [node,*list(node.iterancestors())[:3]])
+                      if label:
+                          result.append(f"title {label!r} {path}")
+                  links = [(a.get('href'), " ".join(a.text_content().split())[:90], a.get('class',''), a.getparent().get('class','')) for a in doc.xpath("//a[@href]") if a.get('href') in (f"/node/{number}", f"/node/{number}/fanwork")]
+                  result.append(f"links {links!r}")
+                  for node in doc.xpath("//*[contains(@class,'views-field-field-chapter-text')]")[:1]:
+                      result.append("shape " + repr([(n.tag,n.get('class'),n.get('id')) for n in list(node.iterancestors())[:7]]))
+                  return "\n".join(result)
+              except Exception as error:
+                  return f"work {number}{suffix} {error}"
+
+          with ThreadPoolExecutor(max_workers=6) as pool:
+              for result in pool.map(inspect, [(n,s) for n in (9758,9749,9701,9743,9379) for s in ("","/fanwork")]):
+                  print(result,flush=True)
+          PY
