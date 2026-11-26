@@ -12,6 +12,18 @@ def git(*args):
     return subprocess.check_output(["git", *args], text=True).strip()
 
 
+def version_introduction(commit, baseline, version):
+    introduction = commit
+    changes = git("log", "--first-parent", "--format=%H", f"{baseline}..{commit}", "--", "Version.props").splitlines()
+    for revision in changes:
+        properties = ElementTree.fromstring(git("show", f"{revision}:Version.props"))
+        if (properties.findtext("./PropertyGroup/Version") != version or
+                properties.findtext("./PropertyGroup/ReleaseBaselineMode") != "version-introduction"):
+            break
+        introduction = revision
+    return introduction
+
+
 def plan(event_name, event, main):
     if event_name == "push":
         before, after = event["before"], event["after"]
@@ -44,6 +56,12 @@ def plan(event_name, event, main):
         distance = position[baseline] - position[commit]
         if distance <= 0:
             raise ValueError("The release must follow its baseline on main")
+        mode = definition.findtext("./PropertyGroup/ReleaseBaselineMode")
+        if mode == "version-introduction":
+            introduction = version_introduction(commit, baseline, base_version)
+            distance = position[introduction] - position[commit]
+        elif mode is not None:
+            raise ValueError("Version.props has an unknown release baseline mode")
         major, minor, patch = map(int, base_version.split("."))
         releases.append({"commit": commit, "version": f"{major}.{minor}.{patch + distance}"})
     return releases
