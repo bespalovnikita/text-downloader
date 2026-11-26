@@ -69,7 +69,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Changed(nameof(CanRepeatSelected));
             if (JournalSelectedOnly) JournalView.Refresh();
             RefreshPageRecovery();
-            if (_initialized && !IsUpdating) _previewTask = PreviewSelectedAsync(value);
+            if (_initialized && !IsUpdating)
+            {
+                PreviewScroll.ScrollToTop();
+                _previewTask = PreviewSelectedAsync(value);
+            }
         }
     }
     private QueueItem? _recoveryItem;
@@ -151,7 +155,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool CanRetry => CanReceiveInput && CanEditSettings && Items.Any(item => item.Status is QueueStatus.Failed or QueueStatus.Cancelled);
     public bool CanOpenUpdates => CanReceiveInput;
     public string StartLabel => Items.Any(q => q.Status == QueueStatus.Paused) ? "Продолжить очередь" : "Скачать очередь";
-    public string QueueCountText => HasQueueItems ? $"Всего {Items.Count} · готово {Items.Count(q => q.Status == QueueStatus.Completed)}" : "";
     public BookFormat Format { get => _settings.Format; set { if (IsUpdating) return; _settings.Format = value; Changed(); ScheduleSave(); } }
     public string OutputDirectory { get => _settings.OutputDirectory; set { if (IsUpdating) return; _settings.OutputDirectory = value; Changed(); ScheduleSave(); } }
     public bool ConfirmAdult { get => _settings.ConfirmAdult; set { if (IsUpdating) return; _settings.ConfirmAdult = value; Changed(); ScheduleSave(); } }
@@ -201,6 +204,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ? (delay, log) => _sessionSourceFactory(delay, log, null, null)
             : (_, _) => sourceFactory();
         JournalView = CreateJournalView();
+        QueueView = CreateQueueView();
         _enableTray = enableTray;
         _ownsUpdateClient = updateClient is null;
         _updateClient = updateClient ?? new UpdateClient();
@@ -304,7 +308,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ? "Все ссылки уже есть в очереди."
             : $"Добавлено: {added}." + (rejected > 0 ? $" Не поддерживаются: {rejected}. Нужна ссылка на поддерживаемую страницу чтения." : "");
         Log(CurrentStatus, rejected > 0 ? DownloadLogLevel.Warning : DownloadLogLevel.Information);
-        if (first is not null) SelectedItem = first;
+        if (first is not null && QueueView.Contains(first)) SelectedItem = first;
         await SaveSafelyAsync();
     }
 

@@ -23,6 +23,7 @@ internal static class Program
             {
                 Directory.CreateDirectory(Root);
                 await RunScenariosAsync();
+                await QueueFiltersAsync();
                 await CacheCleanupUiTests.RunAsync(Path.Combine(Root, "cache-cleanup"));
                 await ManualRecoveryAsync();
                 await SavedPageRecoveryAsync();
@@ -192,6 +193,47 @@ internal static class Program
             !window.JournalText.Contains("[ИНФО]"), "Error-only log filter is incorrect");
         selectedOnly.SetCurrentValue(ToggleButton.IsCheckedProperty, false);
         level.SetCurrentValue(Selector.SelectedValueProperty, DownloadLogLevel.Detail);
+    }
+
+    private static async Task QueueFiltersAsync()
+    {
+        const string firstUrl = "https://sefan.ru/stories/ru/2/drama/queue-alpha_1.html";
+        const string secondUrl = "https://sefan.ru/stories/ru/2/drama/queue-beta_1.html";
+        var network = new FakeNetwork();
+        var window = new MainWindow(Path.Combine(Root, "queue-filters"), () => new FakeSource(network), enableTray: false);
+        window.Show();
+        await window.Ready.WaitAsync(TimeSpan.FromSeconds(10));
+        window.OutputDirectory = Path.Combine(Root, "queue-filter-books");
+        window.PageDelayText = "0,1";
+        await window.AddUrlsAsync(firstUrl + "\n" + secondUrl);
+        await window.ActivePreview.WaitAsync(TimeSpan.FromSeconds(10));
+
+        var grid = (DataGrid)window.FindName("QueueGrid");
+        var search = (TextBox)window.FindName("QueueSearchInput");
+        var status = (ComboBox)window.FindName("QueueStatusFilterCombo");
+        QueueItem first = window.Items[0];
+        search.SetCurrentValue(TextBox.TextProperty, " QUEUE-BETA ");
+        Assert(grid.Items.Count == 1 && grid.Items[0] == window.Items[1], "Search did not match the URL");
+        Assert(window.SelectedItem is null && !window.CanCopySelectedUrl, "A hidden row stayed selected");
+
+        search.SetCurrentValue(TextBox.TextProperty, "НОВОЕ НАЗВАНИЕ");
+        Assert(grid.Items.Count == 0 && window.HasQueueItems, "An empty search result lost the underlying queue");
+        first.Title = "Новое название";
+        await UntilAsync(() => grid.Items.Count == 1 && grid.Items[0] == first, "Search did not update when a title changed");
+
+        search.SetCurrentValue(TextBox.TextProperty, "queue-alpha");
+        status.SetCurrentValue(Selector.SelectedValueProperty, QueueStatusFilter.Completed);
+        Assert(grid.Items.Count == 0 && window.CanStart, "Filtering hid the ability to start queued downloads");
+        Click(window, "StartButton");
+        await window.ActiveSession.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert(window.Items.All(item => item.Status == QueueStatus.Completed), "The filter changed which books downloaded");
+        await UntilAsync(() => grid.Items.Count == 1 && grid.Items[0] == first, "Status filtering did not update after download");
+
+        Click(window, "ResetQueueFiltersButton");
+        Assert(grid.Items.Count == 2 && search.Text == "" && status.SelectedValue is QueueStatusFilter.All,
+            "Reset did not restore the complete queue");
+        await CloseAsync(window);
+        Console.WriteLine("PASS: queue search, live status filters, visible selection and unfiltered downloads");
     }
 
     private static void VerifyCopyUrls(MainWindow window)

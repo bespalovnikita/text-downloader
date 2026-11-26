@@ -8,6 +8,12 @@
  FontFamily="Segoe UI Variable, Segoe UI" FontSize="13" UseLayoutRounding="True"
  WindowStartupLocation="CenterScreen" AllowDrop="True"
  Drop="OnDrop" DragOver="OnDragOver" Closing="OnClosing" StateChanged="OnStateChanged">
+ <Window.InputBindings>
+  <KeyBinding Key="F" Modifiers="Control" Command="Find"/>
+ </Window.InputBindings>
+ <Window.CommandBindings>
+  <CommandBinding Command="Find" CanExecute="OnCanFindQueue" Executed="OnFindQueue"/>
+ </Window.CommandBindings>
  <Window.Resources>
   <ResourceDictionary>
    <ResourceDictionary.MergedDictionaries>
@@ -140,7 +146,10 @@
 
    <Border Style="{StaticResource Surface}">
     <Grid>
-     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+     <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/><RowDefinition Height="Auto"/>
+     </Grid.RowDefinitions>
      <DockPanel Margin="14,8,12,8">
       <Button x:Name="QueueActionsButton" DockPanel.Dock="Right" Content="Действия  ▾"
               AutomationProperties.Name="Действия с очередью" Click="OnQueueActions"
@@ -165,8 +174,27 @@
       </StackPanel>
      </DockPanel>
 
-     <DataGrid x:Name="QueueGrid" Grid.Row="1" ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem,Mode=TwoWay}"
-               IsEnabled="{Binding CanReceiveInput}" Visibility="{Binding HasQueueItems,Converter={StaticResource ShowWhenTrue}}"
+     <DockPanel Grid.Row="1" Margin="12,0,12,8" IsEnabled="{Binding CanReceiveInput}" KeyboardNavigation.TabNavigation="Local"
+                Visibility="{Binding HasQueueItems,Converter={StaticResource ShowWhenTrue}}">
+      <Button x:Name="ResetQueueFiltersButton" DockPanel.Dock="Right" Content="Сбросить" Click="OnResetQueueFilters"
+              AutomationProperties.Name="Сбросить поиск и фильтр очереди" IsEnabled="{Binding HasQueueFilters}" Margin="8,0,0,0" TabIndex="2"/>
+      <ComboBox x:Name="QueueStatusFilterCombo" DockPanel.Dock="Right" Width="140" Margin="8,0,0,0" TabIndex="1"
+                AutomationProperties.Name="Фильтр очереди по статусу" SelectedValuePath="Tag"
+                SelectedValue="{Binding StatusFilter,Mode=TwoWay}">
+       <ComboBoxItem Content="Все статусы" Tag="{x:Static local:QueueStatusFilter.All}"/>
+       <ComboBoxItem Content="Текущие" Tag="{x:Static local:QueueStatusFilter.Current}"/>
+       <ComboBoxItem Content="Готовые" Tag="{x:Static local:QueueStatusFilter.Completed}"/>
+       <ComboBoxItem Content="Ошибки и отмена" Tag="{x:Static local:QueueStatusFilter.NeedsAttention}"/>
+      </ComboBox>
+      <Label DockPanel.Dock="Left" Content="Найти" Target="{Binding ElementName=QueueSearchInput}"
+             Padding="0,0,8,0" VerticalAlignment="Center"/>
+      <TextBox x:Name="QueueSearchInput" Text="{Binding QueueSearchText,UpdateSourceTrigger=PropertyChanged}" TabIndex="0"
+               ToolTip="Поиск по названию или ссылке (Ctrl+F)" AutomationProperties.Name="Поиск в очереди по названию или ссылке"/>
+     </DockPanel>
+
+     <DataGrid x:Name="QueueGrid" Grid.Row="2" ItemsSource="{Binding QueueView}" SelectedItem="{Binding SelectedItem,Mode=TwoWay}"
+               IsEnabled="{Binding CanReceiveInput}" Visibility="{Binding HasVisibleQueueItems,Converter={StaticResource ShowWhenTrue}}"
+               IsSynchronizedWithCurrentItem="False"
                AutomationProperties.Name="Очередь загрузок" SelectionChanged="OnQueueSelectionChanged"
                MouseDoubleClick="OnQueueDoubleClick" CanUserReorderColumns="False" CanUserSortColumns="False">
       <DataGrid.Columns>
@@ -204,20 +232,41 @@
       </DataGrid.Columns>
      </DataGrid>
 
-     <StackPanel Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="20">
+     <StackPanel Grid.Row="2" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="20">
       <StackPanel.Style>
        <Style TargetType="StackPanel">
         <Style.Triggers>
-         <DataTrigger Binding="{Binding HasQueueItems}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+         <DataTrigger Binding="{Binding HasVisibleQueueItems}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
         </Style.Triggers>
        </Style>
       </StackPanel.Style>
-      <TextBlock Text="Очередь пуста" FontSize="17" FontWeight="SemiBold" TextAlignment="Center"/>
-      <TextBlock Text="Добавьте ссылку или перетащите сюда список .txt" Style="{StaticResource Hint}"
-                 TextAlignment="Center" Margin="0,6,0,0"/>
+      <TextBlock FontSize="17" FontWeight="SemiBold" TextAlignment="Center">
+       <TextBlock.Style>
+        <Style TargetType="TextBlock">
+         <Setter Property="Text" Value="Очередь пуста"/>
+         <Style.Triggers>
+          <DataTrigger Binding="{Binding HasQueueItems}" Value="True">
+           <Setter Property="Text" Value="Ничего не найдено"/>
+          </DataTrigger>
+         </Style.Triggers>
+        </Style>
+       </TextBlock.Style>
+      </TextBlock>
+      <TextBlock TextAlignment="Center" Margin="0,6,0,0">
+       <TextBlock.Style>
+        <Style TargetType="TextBlock" BasedOn="{StaticResource Hint}">
+         <Setter Property="Text" Value="Добавьте ссылку или перетащите сюда список .txt"/>
+         <Style.Triggers>
+          <DataTrigger Binding="{Binding HasQueueItems}" Value="True">
+           <Setter Property="Text" Value="Измените запрос или сбросьте фильтры."/>
+          </DataTrigger>
+         </Style.Triggers>
+        </Style>
+       </TextBlock.Style>
+      </TextBlock>
      </StackPanel>
 
-     <Border Grid.Row="2" BorderBrush="{StaticResource OutlineBrush}" BorderThickness="0,1,0,0" Padding="12,4,12,6">
+     <Border Grid.Row="3" BorderBrush="{StaticResource OutlineBrush}" BorderThickness="0,1,0,0" Padding="12,4,12,6">
       <Expander x:Name="JournalExpander" Header="Журнал" Style="{StaticResource SectionExpander}">
        <Grid Margin="0,4,0,0" TextElement.FontWeight="Normal">
         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
@@ -261,7 +310,8 @@
     <Grid>
      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
      <TextBlock Text="Предпросмотр" Style="{StaticResource SectionTitle}" Margin="14,12,14,8"/>
-     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+     <ScrollViewer x:Name="PreviewScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                   HorizontalScrollBarVisibility="Disabled" Focusable="False">
       <StackPanel Margin="14,0,14,12">
        <TextBlock x:Name="PreviewTitleText" Text="{Binding PreviewTitle}" TextWrapping="Wrap" FontSize="16" FontWeight="SemiBold"/>
        <TextBlock Text="{Binding PreviewMetadata}" Style="{StaticResource Hint}" Margin="0,6,0,0"/>
@@ -356,8 +406,10 @@
   <DockPanel Grid.Row="3" Margin="0,12,0,0">
    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
     <Button x:Name="RetryButton" Content="Повторить ошибки" Click="OnRetry"
+            ToolTip="Повторить все задания с ошибкой или отменой"
             IsEnabled="{Binding CanRetry}" Visibility="{Binding CanRetry,Converter={StaticResource ShowWhenTrue}}"/>
-    <Button x:Name="StartButton" Content="{Binding StartLabel}" Click="OnStart" IsEnabled="{Binding CanStart}" Margin="4,0,0,0">
+    <Button x:Name="StartButton" Content="{Binding StartLabel}" Click="OnStart" IsEnabled="{Binding CanStart}" Margin="4,0,0,0"
+            ToolTip="Запустить все ожидающие и приостановленные задания">
      <Button.Style>
       <Style TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
        <Style.Triggers>

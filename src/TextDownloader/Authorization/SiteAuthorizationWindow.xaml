@@ -3,69 +3,145 @@
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  xmlns:core="clr-namespace:TextDownloader.Core;assembly=TextDownloader.Core"
  Title="Авторизация сайтов" Width="890" Height="750" MinWidth="670" MinHeight="550"
- Background="#171A20" Foreground="#EEF1F8" WindowStartupLocation="CenterOwner">
+ Background="{DynamicResource WindowBrush}" Foreground="{DynamicResource TextBrush}"
+ FontFamily="Segoe UI Variable, Segoe UI" FontSize="13" UseLayoutRounding="True" WindowStartupLocation="CenterOwner">
  <Window.Resources><ResourceDictionary Source="/TextDownloader;component/Styles.xaml"/></Window.Resources>
  <DockPanel Margin="16">
   <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
-   <TextBlock x:Name="Status" TextWrapping="Wrap" Margin="2,0,2,6"/>
+   <TextBlock x:Name="Status" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="2,0,2,8">
+    <TextBlock.Style>
+     <Style TargetType="TextBlock">
+      <Style.Triggers><Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed"/></Trigger></Style.Triggers>
+     </Style>
+    </TextBlock.Style>
+   </TextBlock>
    <WrapPanel HorizontalAlignment="Right">
-    <Button x:Name="CheckRule" Content="Проверить вход" Click="OnCheck"/>
-    <Button x:Name="SaveRule" Content="Сохранить правило" Background="{StaticResource AccentBrush}" Click="OnSave"/>
     <Button Content="Закрыть" Click="OnClose"/>
+    <Button x:Name="CheckRule" Content="Проверить вход" Click="OnCheck"/>
+    <Button x:Name="SaveRule" Content="Сохранить правило" Style="{StaticResource PrimaryButton}" Click="OnSave"/>
    </WrapPanel>
   </StackPanel>
   <Grid>
-   <Grid.ColumnDefinitions><ColumnDefinition Width="260"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-   <DockPanel Margin="0,0,12,0">
-    <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-     <Button x:Name="NewRule" Content="Добавить" Click="OnNew"/>
-     <Button x:Name="RemoveRule" Content="Удалить" Click="OnRemove" IsEnabled="False"/>
-    </WrapPanel>
-    <ListBox x:Name="RulesList" SelectionChanged="OnSelect" AutomationProperties.Name="Правила авторизации">
-     <ListBox.ItemTemplate><DataTemplate><StackPanel Margin="4">
-      <TextBlock Text="{Binding Rule.Host}" FontWeight="SemiBold"/>
-      <TextBlock Text="{Binding Summary}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
-     </StackPanel></DataTemplate></ListBox.ItemTemplate>
-    </ListBox>
-   </DockPanel>
-   <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
-    <StackPanel x:Name="Editor" Margin="8,0,12,0">
-     <Label Content="Домен сайта" Target="{Binding ElementName=HostInput}"/>
-     <TextBox x:Name="HostInput" MaxLength="253"/>
-     <Label Content="Способ входа" Target="{Binding ElementName=Mode}"/>
-     <ComboBox x:Name="Mode" SelectedValuePath="Tag" SelectionChanged="OnModeChanged">
-      <ComboBoxItem Content="Вход через браузер" Tag="{x:Static core:SiteAuthorizationMethod.Browser}"/>
-      <ComboBoxItem Content="Логин и пароль (HTTP Basic)" Tag="{x:Static core:SiteAuthorizationMethod.Basic}"/>
-      <ComboBoxItem Content="Bearer-токен" Tag="{x:Static core:SiteAuthorizationMethod.Bearer}"/>
-      <ComboBoxItem Content="Cookies" Tag="{x:Static core:SiteAuthorizationMethod.Cookies}"/>
-     </ComboBox>
-     <CheckBox x:Name="EnabledRule" Content="Использовать правило" Margin="2,8,0,4"/>
-     <StackPanel x:Name="BrowserSettings">
-      <Label Content="Адрес страницы входа (необязательно)" Target="{Binding ElementName=SignInInput}"/>
-      <TextBox x:Name="SignInInput" MaxLength="2048"/>
-      <Label Content="Дополнительные домены входа через запятую" Target="{Binding ElementName=SignInHostsInput}"/>
-      <TextBox x:Name="SignInHostsInput" MaxLength="2048"/>
-      <CheckBox x:Name="FillForm" Content="Сохранить логин и пароль для веб-формы" Checked="OnFillFormChanged" Unchecked="OnFillFormChanged" Margin="2,8,0,4"/>
+   <Grid.ColumnDefinitions><ColumnDefinition Width="225"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+   <Border Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource OutlineBrush}"
+           BorderThickness="1" CornerRadius="8" Margin="0,0,12,0">
+    <DockPanel>
+     <StackPanel DockPanel.Dock="Top" Margin="10,10,10,8">
+      <TextBlock Text="Правила сайтов" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,8"/>
+      <WrapPanel>
+       <Button x:Name="NewRule" Content="Добавить" Click="OnNew" Margin="0,0,6,0"/>
+       <Button x:Name="RemoveRule" Content="Удалить" Click="OnRemove" IsEnabled="False" Margin="0"/>
+      </WrapPanel>
      </StackPanel>
-     <StackPanel x:Name="LoginFields">
-      <Label Content="Логин" Target="{Binding ElementName=LoginInput}"/>
-      <TextBox x:Name="LoginInput" MaxLength="512"/>
-      <StackPanel x:Name="FormFieldNames">
-       <Label Content="Имя поля логина (атрибут name)" Target="{Binding ElementName=UserFieldInput}"/>
-       <TextBox x:Name="UserFieldInput" MaxLength="120"/>
-       <Label Content="Имя поля пароля (атрибут name)" Target="{Binding ElementName=PasswordFieldInput}"/>
-       <TextBox x:Name="PasswordFieldInput" MaxLength="120"/>
+     <Grid>
+      <ListBox x:Name="RulesList" SelectionChanged="OnSelect" AutomationProperties.Name="Правила авторизации"
+               Background="Transparent" Foreground="{StaticResource TextBrush}" BorderThickness="0"
+               ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+       <ListBox.ItemContainerStyle>
+        <Style TargetType="ListBoxItem">
+         <Setter Property="Margin" Value="6,0,6,2"/>
+         <Setter Property="Padding" Value="8,6"/>
+         <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocus}"/>
+         <Setter Property="Template">
+          <Setter.Value>
+           <ControlTemplate TargetType="ListBoxItem">
+            <Border x:Name="Row" Background="Transparent" Padding="{TemplateBinding Padding}" CornerRadius="5">
+             <ContentPresenter/>
+            </Border>
+            <ControlTemplate.Triggers>
+             <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Row" Property="Background" Value="{StaticResource FieldHoverBrush}"/>
+             </Trigger>
+             <Trigger Property="IsSelected" Value="True">
+              <Setter TargetName="Row" Property="Background" Value="{StaticResource SelectedBrush}"/>
+             </Trigger>
+            </ControlTemplate.Triggers>
+           </ControlTemplate>
+          </Setter.Value>
+         </Setter>
+        </Style>
+       </ListBox.ItemContainerStyle>
+       <ListBox.ItemTemplate>
+        <DataTemplate>
+         <StackPanel>
+          <TextBlock Text="{Binding Rule.Host}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Rule.Host}"/>
+          <TextBlock Text="{Binding Summary}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,3,0,0"/>
+         </StackPanel>
+        </DataTemplate>
+       </ListBox.ItemTemplate>
+      </ListBox>
+      <TextBlock Text="Правил пока нет" Foreground="{StaticResource MutedBrush}" IsHitTestVisible="False"
+                 Margin="12,6,12,0" HorizontalAlignment="Center" VerticalAlignment="Center">
+       <TextBlock.Style>
+        <Style TargetType="TextBlock">
+         <Style.Triggers>
+          <DataTrigger Binding="{Binding HasItems,ElementName=RulesList}" Value="True">
+           <Setter Property="Visibility" Value="Collapsed"/>
+          </DataTrigger>
+         </Style.Triggers>
+        </Style>
+       </TextBlock.Style>
+      </TextBlock>
+     </Grid>
+    </DockPanel>
+   </Border>
+   <Border Grid.Column="1" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource OutlineBrush}"
+           BorderThickness="1" CornerRadius="8">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+     <StackPanel x:Name="Editor" Margin="14,12,14,14">
+      <StackPanel.Resources>
+       <Style TargetType="Label">
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+        <Setter Property="Padding" Value="0,6,0,4"/>
+       </Style>
+      </StackPanel.Resources>
+      <TextBlock Text="Настройки входа" FontWeight="SemiBold" FontSize="16" Margin="0,0,0,6"/>
+      <Label Content="Домен сайта" Target="{Binding ElementName=HostInput}"/>
+      <TextBox x:Name="HostInput" MaxLength="253"/>
+      <Label Content="Способ входа" Target="{Binding ElementName=Mode}"/>
+      <ComboBox x:Name="Mode" SelectedValuePath="Tag" SelectionChanged="OnModeChanged">
+       <ComboBoxItem Content="Вход через браузер" Tag="{x:Static core:SiteAuthorizationMethod.Browser}"/>
+       <ComboBoxItem Content="Логин и пароль (HTTP Basic)" Tag="{x:Static core:SiteAuthorizationMethod.Basic}"/>
+       <ComboBoxItem Content="Bearer-токен" Tag="{x:Static core:SiteAuthorizationMethod.Bearer}"/>
+       <ComboBoxItem Content="Cookies" Tag="{x:Static core:SiteAuthorizationMethod.Cookies}"/>
+      </ComboBox>
+      <CheckBox x:Name="EnabledRule" Content="Использовать правило" Margin="2,8,0,4"/>
+      <StackPanel x:Name="BrowserSettings">
+       <Label Content="Адрес страницы входа (необязательно)" Target="{Binding ElementName=SignInInput}"/>
+       <TextBox x:Name="SignInInput" MaxLength="2048"/>
+       <CheckBox x:Name="FillForm" Content="Сохранить логин и пароль для веб-формы" Checked="OnFillFormChanged" Unchecked="OnFillFormChanged" Margin="2,8,0,4"/>
+       <Expander Header="Дополнительные параметры входа" Foreground="{StaticResource TextBrush}" Margin="0,2,0,0">
+        <StackPanel Margin="0,0,0,6">
+         <Label Content="Дополнительные домены входа через запятую" Target="{Binding ElementName=SignInHostsInput}"/>
+         <TextBox x:Name="SignInHostsInput" MaxLength="2048"/>
+        </StackPanel>
+       </Expander>
       </StackPanel>
+      <StackPanel x:Name="LoginFields">
+       <Label Content="Логин" Target="{Binding ElementName=LoginInput}"/>
+       <TextBox x:Name="LoginInput" MaxLength="512"/>
+       <StackPanel x:Name="FormFieldNames">
+        <Label Content="Имя поля логина (атрибут name)" Target="{Binding ElementName=UserFieldInput}"/>
+        <TextBox x:Name="UserFieldInput" MaxLength="120"/>
+        <Label Content="Имя поля пароля (атрибут name)" Target="{Binding ElementName=PasswordFieldInput}"/>
+        <TextBox x:Name="PasswordFieldInput" MaxLength="120"/>
+       </StackPanel>
+      </StackPanel>
+      <StackPanel x:Name="SecretFields">
+       <Label x:Name="SecretLabel" Target="{Binding ElementName=SecretInput}"/>
+       <PasswordBox x:Name="SecretInput" MaxLength="16384" MinHeight="32" Background="{StaticResource FieldBrush}"
+                    Foreground="{StaticResource TextBrush}" BorderBrush="{StaticResource FieldBorderBrush}"
+                    CaretBrush="{StaticResource TextBrush}" FocusVisualStyle="{StaticResource KeyboardFocus}" Padding="8,5"/>
+       <TextBlock Text="При редактировании пустое поле сохраняет прежнее значение." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="2,3,0,0"/>
+      </StackPanel>
+      <Border BorderBrush="{StaticResource OutlineBrush}" BorderThickness="0,1,0,0" Margin="0,12,0,4" Padding="0,10,0,0">
+       <TextBlock Text="Проверка доступа" FontSize="16" FontWeight="SemiBold"/>
+      </Border>
+      <Label Content="Ссылка на страницу чтения" Target="{Binding ElementName=CheckUrlInput}"/>
+      <TextBox x:Name="CheckUrlInput" MaxLength="2048"/>
      </StackPanel>
-     <StackPanel x:Name="SecretFields">
-      <Label x:Name="SecretLabel" Target="{Binding ElementName=SecretInput}"/>
-      <PasswordBox x:Name="SecretInput" MaxLength="16384" Background="#232831" Foreground="#EEF1F8" Padding="8,5"/>
-      <TextBlock Text="При редактировании пустое поле сохраняет прежнее значение." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="2,3,0,0"/>
-     </StackPanel>
-     <Label Content="Ссылка на страницу чтения для проверки входа" Target="{Binding ElementName=CheckUrlInput}"/>
-     <TextBox x:Name="CheckUrlInput" MaxLength="2048"/>
-    </StackPanel>
-   </ScrollViewer>
+    </ScrollViewer>
+   </Border>
   </Grid>
  </DockPanel>
 </Window>
