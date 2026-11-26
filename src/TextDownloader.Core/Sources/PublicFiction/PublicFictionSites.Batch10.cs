@@ -80,7 +80,10 @@ internal static partial class PublicFictionSites
             "//main//div[contains(concat(' ',normalize-space(@class),' '),' sqs-html-content ') and " +
             "string-length(normalize-space(.))>300]")
         {
-            CatalogLinks = "//main//a[contains(@class,'gallery-grid-image-link') and @href]",
+            // The gallery also advertises projects with no public chapter archive.
+            CatalogLinks = "//main//a[contains(@class,'gallery-grid-image-link') and " +
+                "(contains(@href,'/facing-you') or contains(@href,'/sickly-bigshot') or " +
+                "contains(@href,'/his-majesty-ministers') or contains(@href,'/tvhba') or contains(@href,'/gourd-farm'))]",
             WorkTitle = "//title",
             ChapterTitle = "//h1[contains(@class,'entry-title')] | //title",
             Contents = "//a[contains(concat(' ',normalize-space(@class),' '),' archive-item-link ') and @href]",
