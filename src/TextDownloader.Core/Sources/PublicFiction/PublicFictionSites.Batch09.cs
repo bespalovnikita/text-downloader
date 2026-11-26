@@ -71,13 +71,13 @@ internal static partial class PublicFictionSites
         },
         WorksArchive("SquidgeWorld Archive", "squidgeworld.org", "/works?work_search%5Brating_ids%5D=10"),
         WorksArchive("Ad Astra Star Trek Fanfiction Archive", "www.adastrafanfic.com", "/works"),
-        new("Web Truyện Dịch", "https://webtruyendich.com/tim-truyen?sort=view_all", "webtruyendich.com",
-            @"/truyen/(?<work>[a-z0-9-]+)/?", @"/truyen/(?<work>[a-z0-9-]+)/(?<part>[a-z0-9-]+/chuong-[a-z0-9.-]+)/?",
-            "//*[@id='chapter-content' or @id='chapter-text'] | //div[contains(concat(' ',normalize-space(@class),' '),' chapter-content ')]")
+        new("NovelFrance", "https://novelfrance.fr/rankings", "novelfrance.fr",
+            @"/novel/(?<work>[a-z0-9-]+)/?", @"/novel/(?<work>[a-z0-9-]+)/(?<part>chapter-[a-z0-9.-]+)/?",
+            "//div[contains(concat(' ',normalize-space(@class),' '),' chapter-content ')]")
         {
-            FirstChapter = "//a[@id='read-story-btn' and @href]",
-            NextChapter = "//a[@href and (@id='next-chapter' or @rel='next' or contains(@aria-label,'Chương sau'))]",
-            WorkFromChapter = "/truyen/${work}"
+            FirstChapter = "(//a[normalize-space(.)='Commencer la lecture' and contains(@href,'/chapter-')])[1]",
+            NextChapter = "//a[@href and starts-with(normalize-space(.),'Suivant') and contains(@href,'/chapter-')]",
+            WorkFromChapter = "/novel/${work}"
         }
     ]);
 
@@ -92,6 +92,7 @@ internal static partial class PublicFictionSites
             ChapterTitle = "//*[@id='chapters']//h3[contains(@class,'title')] | //h2[contains(@class,'title')]",
             Author = "//a[@rel='author']",
             AllowStandalone = "//*[@id='chapters']",
+            WorkMayRedirectToFirstChapter = true,
             NextChapter = "//li[contains(concat(' ',normalize-space(@class),' '),' next ')]/a[contains(@href,'/chapters/')]",
             WorkFromChapter = "/works/${work}"
         };

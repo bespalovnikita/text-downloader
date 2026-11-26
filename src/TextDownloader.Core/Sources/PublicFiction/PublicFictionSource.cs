@@ -301,7 +301,9 @@ internal sealed class PublicFictionSource : IBookStorySource
     private async Task<LoadedPage> ReadStoryAsync(Uri url, CancellationToken token)
     {
         bool Matches(Uri target) => CanHandle(target) && target.Scheme == Uri.UriSchemeHttps &&
-            ChapterKey(target) == ChapterKey(url);
+            (ChapterKey(target) == ChapterKey(url) ||
+                (_site.WorkMayRedirectToFirstChapter && _site.Work(url).Success &&
+                    _site.Chapter(target).Success && WorkKey(target) == WorkKey(url)));
         var document = await ReadHtmlAsync(url, Matches, token).ConfigureAwait(false);
         var canonical = document.Html.DocumentNode.SelectSingleNode("//link[@rel='canonical' and @href]");
         bool CanonicalMatches(Uri target) => Matches(target) || _site.CanonicalMayIdentifyWork &&
