@@ -68,13 +68,18 @@ internal static partial class PublicFictionSites
             SortContentsByChapterNumber = true,
             WorkFromChapter = "/${work}/"
         },
-        new("Sky Demon Order", "https://skydemonorder.com/", "skydemonorder.com",
-            @"/projects/(?<work>[a-z0-9-]+)/?", @"/projects/(?<work>[a-z0-9-]+)/(?<part>[0-9]+-[a-z0-9.-]+)/?",
-            "//*[@id='chapter-body']")
+        new("Psychfic", "https://www.psychfic.com/", "www.psychfic.com",
+            @"/viewstory\.php\?sid=(?<work>[0-9]+)",
+            @"/viewstory\.php\?sid=(?<work>[0-9]+)(?:&textsize=[0-9]+)?(?:&chapter=(?<part>[0-9]+))?",
+            "//*[@id='story']")
         {
-            FirstChapter = "//a[normalize-space(.)='Start Reading' and @href]",
-            NextChapter = "//a[@aria-label='Next chapter' and @href]",
-            WorkFromChapter = "/projects/${work}"
+            QueryIsRoute = true,
+            WorkTitle = "//title",
+            ChapterTitle = "//title",
+            FirstChapter = "//*[@id='output']//a[contains(@href,'&chapter=1') and @href][1]",
+            NextChapter = "//*[@id='next']/a[@class='next' and @href]",
+            AllowStandalone = "//*[@id='story']",
+            WorkFromChapter = "/viewstory.php?sid=${work}"
         },
         new("Portkey Archive", "https://portkey-archive.org/ship/harry-and-hermione", "portkey-archive.org",
             @"/story/(?<work>[0-9]+)/?", @"/story/(?<work>[0-9]+)/(?<part>[0-9]+)/?",

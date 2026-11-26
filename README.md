@@ -82,7 +82,7 @@ https://bestweapon.cc/post_124145
   Snowy Codex, TeaNovel, Novel Mania, Dobytranslations, Asura Scans,
   NovelFrance, MegaNovel, Light Novel Translations, Revenger Novels,
   Dusk Blossoms, Virlyce, IndoWebNovel, NovelFull.net, WordRain,
-  LabNovel, MyDramaNovel, Sky Demon Order, Portkey Archive и Stories of Arda.
+  LabNovel, MyDramaNovel, Psychfic, Portkey Archive и Stories of Arda.
 - На Sefan состав цикла берётся из оглавления. Каталоги, поиск и страницы
   анонсов `_nova.html` не обрабатываются.
 - На Bestweapon состав и порядок цикла определяются по оглавлению публикации.
