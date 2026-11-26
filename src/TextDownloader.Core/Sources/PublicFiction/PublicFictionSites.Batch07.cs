@@ -33,22 +33,25 @@ internal static partial class PublicFictionSites
             Contents = "//main//a[@href and (contains(@href,'/ch-') or contains(@href,'/ch0') or contains(@href,'/chapter'))]",
             ContentsDefinesChapterMembership = true
         },
-        new("Snowy Codex", "https://snowycodex.com/novels/", "snowycodex.com",
-            @"/novels/(?<work>[a-z0-9-]+)/?", @"/novels/(?<work>[a-z0-9-]+)/(?<part>[a-z0-9.-]+)/?", EntryContent)
+        new("Booknet", "https://booknet.ua/", "booknet.ua",
+            @"/book/(?<work>[a-z0-9-]+-b[0-9]+)/?",
+            @"/reader/(?<work>[a-z0-9-]+-b[0-9]+)/?\?c=(?<part>[0-9]+)",
+            "//div[contains(concat(' ',normalize-space(@class),' '),' reader-text ')]")
         {
-            WorkTitle = "//h1[@class='entry-title']",
-            ChapterTitle = "//h1[@class='entry-title'] | //title",
-            FirstChapter = "(//div[contains(concat(' ',normalize-space(@class),' '),' entry-content ')]//a[@href and " +
-                "(contains(@href,'/chapter-1/') or contains(@href,'/prologue/'))])[1]",
-            NextChapter = "//a[@href and (normalize-space(.)='Next Chapter' or normalize-space(.)='Next' or @rel='next')]",
-            WorkFromChapter = "/novels/${work}/"
+            QueryIsRoute = true,
+            CatalogLinks = "//a[contains(@class,'bn_book-row__item-link') and @href]",
+            WorkTitle = "//h1[contains(@class,'bn_book__header-title')]",
+            ChapterTitle = "//*[@id='reader'] | //title",
+            Contents = "//a[contains(@class,'bn_book__chapters-item-link') and contains(@href,'?c=')]",
+            WorkFromChapter = "/book/${work}"
         },
-        new("NovelRare", "https://novelrare.com/library/", "novelrare.com",
-            @"/novel/(?<work>[a-z0-9-]+)/?", @"/novel/(?<work>[a-z0-9-]+)/(?<part>chapter-[a-z0-9.-]+)/?",
-            "//div[contains(concat(' ',normalize-space(@class),' '),' ne-reader-chapter-text ')]")
+        new("What's a Whizzer Web Novels", "https://whatsawhizzerwebnovels.com/novels/", "whatsawhizzerwebnovels.com",
+            @"/novel/(?<work>[a-z0-9-]+)/?", @"/novel/(?<work>[a-z0-9-]+)/(?<part>(?:[a-z0-9.-]+/)?[a-z0-9.-]+)/?", MadaraText)
         {
-            FirstChapter = "(//a[normalize-space(.)='Start Reading' and @href])[1]",
-            NextChapter = "//a[@href and starts-with(normalize-space(.),'Next') and contains(@href,'/chapter-')]",
+            WorkTitle = "//div[contains(@class,'post-title')]/h1 | //title",
+            ChapterTitle = "//*[@id='chapter-heading'] | //title",
+            FirstChapter = "//a[@id='btn-read-first' and @href and @href!='#']",
+            NextChapter = "//a[contains(concat(' ',normalize-space(@class),' '),' next_page ') and @href and @href!='#']",
             WorkFromChapter = "/novel/${work}/"
         },
         new("Athena Translations", "https://athenatls.com/novels/", "athenatls.com",
