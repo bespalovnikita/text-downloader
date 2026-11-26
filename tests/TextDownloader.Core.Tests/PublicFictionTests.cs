@@ -61,11 +61,13 @@ internal static class PublicFictionTests
 
     public static async Task<int> RunLiveAsync(string[] filter)
     {
-        var sites = PublicFictionSites.All.Where(site => filter.Length == 0 ||
+        bool latestBatch = filter is ["--latest-batch"];
+        var sites = latestBatch ? PublicFictionSites.Batches[^1] : PublicFictionSites.All.Where(site => filter.Length == 0 ||
             filter.Contains(site.Host, StringComparer.OrdinalIgnoreCase)).ToArray();
-        if (sites.Length == 0 || (filter.Length > 0 && sites.Length != filter.Distinct(StringComparer.OrdinalIgnoreCase).Count()))
+        if (latestBatch ? sites.Length != 10 : sites.Length == 0 ||
+            (filter.Length > 0 && sites.Length != filter.Distinct(StringComparer.OrdinalIgnoreCase).Count()))
         {
-            Console.Error.WriteLine("Unknown public fiction site hostname.");
+            Console.Error.WriteLine("Expected ten sites in the latest batch or a list of supported hostnames.");
             return 2;
         }
 
@@ -73,16 +75,19 @@ internal static class PublicFictionTests
         Console.WriteLine($"Catalog selection seed {seed}.");
         var factory = SupportedStorySource.CreateFactory();
         using var router = factory(TimeSpan.FromMilliseconds(350));
-        var results = await Task.WhenAll(sites.Select((site, i) => CheckLiveAsync(site, router, new Random(seed + i))));
+        var results = new bool[sites.Length];
+        await Parallel.ForEachAsync(Enumerable.Range(0, sites.Length), new ParallelOptions { MaxDegreeOfParallelism = 4 },
+            async (i, token) => results[i] = await CheckLiveAsync(sites[i], router, new Random(seed + i), token));
         Console.WriteLine($"{results.Count(ok => ok)}/{sites.Length} live site checks passed.");
         return results.All(ok => ok) ? 0 : 1;
     }
 
-    private static async Task<bool> CheckLiveAsync(PublicFictionSite site, IStorySource router, Random random)
+    private static async Task<bool> CheckLiveAsync(PublicFictionSite site, IStorySource router, Random random, CancellationToken token)
     {
         using var source = new PublicFictionSource(site, TimeSpan.FromMilliseconds(350), new PageRequestThrottle());
         using var temp = new TempDirectory();
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+        timeout.CancelAfter(TimeSpan.FromSeconds(90));
         try
         {
             var sample = (await source.ReadCatalogAsync(timeout.Token)).ToArray();
