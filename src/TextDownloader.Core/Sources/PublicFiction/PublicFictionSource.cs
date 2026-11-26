@@ -86,8 +86,7 @@ internal sealed class PublicFictionSource : IBookStorySource
         progress?.Report(new DownloadProgress(0, null, "Читаем оглавление " + _site.Name + "…")
             { Checkpoint = new DownloadCheckpoint(work, null, work) });
         var index = await ReadIndexAsync(work, cancellationToken).ConfigureAwait(false);
-        if (_site.SortContentsByChapterNumber && ChapterSequence(index.Start) > 1)
-            throw new InvalidDataException("Оглавление не содержит первой главы. Неполный текст не экспортирован.");
+        var scope = _site.FirstChapterMayUseDifferentSlug ? index.Start : work;
         var cacheReader = new StoryDownloader(this, cacheDirectory);
         var cache = cacheReader.PartCacheDirectory(work);
         var chapters = new List<BookChapter>();
@@ -105,7 +104,7 @@ internal sealed class PublicFictionSource : IBookStorySource
             if (number > MaxChapters || !visited.Add(ChapterKey(current)))
                 throw new InvalidDataException("Повтор главы или превышен предел глав.");
             Uri? plannedNext = index.Chapters is { } plan && number < plan.Count ? plan[number] : null;
-            var page = refresh ? null : await cacheReader.ReadCacheAsync(cache, number, work, current, cancellationToken)
+            var page = refresh ? null : await cacheReader.ReadCacheAsync(cache, number, scope, current, cancellationToken)
                 .ConfigureAwait(false);
             if (page is not null && (index.Chapters is not null && (page.NextUrl != plannedNext || page.TotalPages != total) ||
                 HasFollowLink && page.NextUrl is null))
@@ -123,9 +122,9 @@ internal sealed class PublicFictionSource : IBookStorySource
                     { Checkpoint = new DownloadCheckpoint(work, last, current) });
                 var document = current == work ? index.Document : await ReadStoryAsync(current, cancellationToken).ConfigureAwait(false);
                 page = ParseChapter(document.Html, current, number, index.Title);
-                var subsequent = index.Chapters is not null ? plannedNext : ReadNext(document.Html, work, document.Url);
+                var subsequent = index.Chapters is not null ? plannedNext : ReadNext(document.Html, scope, document.Url);
                 page = page with { NextUrl = subsequent, TotalPages = total ?? (subsequent is null ? number : null) };
-                cacheReader.ValidatePage(page, work, current, number);
+                cacheReader.ValidatePage(page, scope, current, number);
                 fingerprint = StoryDownloader.ValidateChainPage(page, total, fingerprints);
                 await StoryDownloader.WriteCacheAsync(cache, page, cancellationToken).ConfigureAwait(false);
             }
@@ -192,7 +191,7 @@ internal sealed class PublicFictionSource : IBookStorySource
         }
         if (_site.FirstChapter is { } first)
         {
-            var chapters = ReadLinks(html, url, document.Url, first);
+            var chapters = ReadLinks(html, url, document.Url, first, requireMatchingWork: !_site.FirstChapterMayUseDifferentSlug);
             if (chapters.Count == 1)
                 return new Index(document, title, author, chapters[0], HasFollowLink ? null : chapters);
             if (chapters.Count > 1) throw new InvalidDataException("Найдено несколько первых глав.");
@@ -230,7 +229,7 @@ internal sealed class PublicFictionSource : IBookStorySource
         };
     }
 
-    private List<Uri> ReadLinks(HtmlDocument html, Uri work, Uri current, string xpath)
+    private List<Uri> ReadLinks(HtmlDocument html, Uri work, Uri current, string xpath, bool requireMatchingWork = true)
     {
         var chapters = new List<Uri>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -238,7 +237,7 @@ internal sealed class PublicFictionSource : IBookStorySource
         {
             if (!TryLink(current, node, out var link) || !CanHandle(link) || !_site.Chapter(link).Success)
                 throw new InvalidDataException("Оглавление содержит недопустимую ссылку на главу.");
-            var normalized = ValidatePageRoute(work, link, null);
+            var normalized = requireMatchingWork ? ValidatePageRoute(work, link, null) : _site.Normalize(link);
             if (seen.Add(ChapterKey(normalized))) chapters.Add(normalized);
             if (chapters.Count > MaxChapters) throw new InvalidDataException("Превышен предел глав.");
         }

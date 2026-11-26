@@ -18,6 +18,7 @@ internal sealed class PublicFictionSite(
     public string? Author { get; init; }
     public string? Contents { get; init; }
     public string? FirstChapter { get; init; }
+    public bool FirstChapterMayUseDifferentSlug { get; init; }
     public string? NextChapter { get; init; }
     public string? ChapterOptions { get; init; }
     public string? ChapterFromOption { get; init; }
