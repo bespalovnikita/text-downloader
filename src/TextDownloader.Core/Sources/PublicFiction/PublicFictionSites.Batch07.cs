@@ -2,103 +2,99 @@ namespace TextDownloader.Core;
 
 internal static partial class PublicFictionSites
 {
+    private const string SquarespaceReader = "//article//div[contains(concat(' ',normalize-space(@class),' '),' sqs-html-content ') " +
+        "and not(ancestor::footer) and string-length(normalize-space(.))>100]";
+
     static partial void AddBatch07(Dictionary<int, PublicFictionSite[]> batches) => batches.Add(7,
     [
-        new("Sleepy Translations", "https://sleepytranslations.com/series/", "sleepytranslations.com",
-            @"/series/(?<work>[a-z0-9-]+)/?", @"/series/(?<work>[a-z0-9-]+)/(?<part>[a-z0-9.-]+)/?", MadaraText)
-        {
-            FirstChapter = "//a[@id='btn-read-last' and @href and @href!='#']",
-            NextChapter = "//a[contains(concat(' ',normalize-space(@class),' '),' next_page ') and @href and @href!='#']",
-            WorkFromChapter = "/series/${work}/"
-        },
         new("Ckanda Writes", "https://ckandawrites.online/az-lists/", "ckandawrites.online",
             @"/(?![a-z0-9-]+-(?:chapter|extra)-[a-z0-9.-]+/?$)(?<work>[a-z0-9-]+)/?",
             @"/(?<work>[a-z0-9-]+?)-(?<part>(?:chapter|extra)-[a-z0-9.-]+)/?",
             "//div[contains(concat(' ',normalize-space(@class),' '),' epcontent ')]")
         {
             FirstChapter = "//div[contains(@class,'inepcx')]/a[@href and starts-with(normalize-space(.),'First Chapter')]",
-            NextChapter = NextByRel,
-            WorkFromChapter = "/${work}/"
-        },
-        new("Tiger Translations", "https://tigertranslations.org/", "tigertranslations.org",
-            @"/(?![a-z0-9-]+-[0-9]+(?:-[a-z0-9-]+)?/?$)(?<work>[a-z0-9-]+)/?",
-            @"/(?:[0-9]{4}/[0-9]{2}/[0-9]{2}/)?(?<work>[a-z0-9-]+?)-(?<part>[0-9]+(?:-[a-z0-9-]+)?)/?",
-            EntryContent)
-        {
-            CatalogLinks = "//nav//a[@href]",
-            WorkTitle = "//h1[@class='entry-title']",
-            ChapterTitle = "//h1[@class='entry-title']",
-            FirstChapter = "(//div[contains(@class,'entry-content')]//a[starts-with(normalize-space(.),'Chapter 1') and " +
-                "(normalize-space(.)='Chapter 1' or starts-with(normalize-space(.),'Chapter 1:') or starts-with(normalize-space(.),'Chapter 1 '))])[1]",
-            NextChapter = "//div[contains(@class,'entry-content')]//a[normalize-space(.)='Next Chapter' and @href]",
-            WorkFromChapter = "/${work}/"
-        },
-        new("BabelNovel", "https://babelnovel.com/", "babelnovel.com",
-            @"/books/(?<work>[a-z0-9-]+)/?", @"/books/(?<work>[a-z0-9-]+)/chapters/(?<part>c[0-9]+(?:-[0-9]+)?)/?",
-            "//article[starts-with(@class,'chapter_container')]/section")
-        {
-            ChapterTitle = "//title",
-            FirstChapter = "(//a[contains(@class,'chapter-item_container') and " +
-                "substring(@href,string-length(@href)-2)='/c1'])[1]",
-            NextChapter = "//a[@rel='next' and @href and @href!='#']",
-            WorkFromChapter = "/books/${work}"
+            FirstChapterMayUseDifferentSlug = true,
+            NextChapter = NextByRel
         },
         new("Gravity Tales", "https://gravitytales.com/", "gravitytales.com",
             @"/story/(?<work>[a-z0-9-]+)/?", @"/story/(?<work>[a-z0-9-]+)/(?<part>[a-z0-9.-]+)/?",
             "//section[contains(concat(' ',normalize-space(@class),' '),' chapter__content ')]")
         {
-            Contents = "//ol[contains(@class,'chapter-group__list')]//a[contains(@class,'chapter-group__list-item-link') and @href]",
+            Contents = "//ol[contains(@class,'chapter-group__list')]//a[contains(@class,'chapter-group__list-item-link') and " +
+                "(starts-with(@href,'/story/') or starts-with(@href,'https://gravitytales.com/story/'))]",
             WorkFromChapter = "/story/${work}/"
         },
-        new("FAQWiki", "https://faqwiki.xyz/", "faqwiki.xyz",
-            @"/(?![a-z0-9-]+-chapter-[a-z0-9.-]+/?$)(?<work>[a-z0-9-]+)/?",
-            @"/(?<work>[a-z0-9-]+?)-(?<part>chapter-[a-z0-9.-]+)/?", EntryContent)
+        new("Fringe Capybara", "https://www.fringecapybara.com/", "www.fringecapybara.com",
+            @"/(?<work>[a-z0-9-]+-toc)/?", @"/(?<work>[a-z0-9-]+)/(?<part>(?:ch|chapter)[a-z0-9.-]+)/?",
+            SquarespaceReader)
         {
-            CatalogLinks = "//div[contains(@class,'entry-content')]//a[@href]",
-            WorkTitle = "//h1[@class='entry-title']",
-            ChapterTitle = "//h1[@class='entry-title']",
-            FirstChapter = "(//div[contains(@class,'entry-content')]//a[contains(@href,'-chapter-1/') and @href])[1]",
-            NextChapter = "//a[contains(concat(' ',normalize-space(@class),' '),' next-chapter ') and @href and @href!='#']",
-            ExcludeContent = ".//div[contains(@class,'code-block')]",
-            WorkFromChapter = "/${work}/"
+            WorkTitle = "//title",
+            Contents = "//main//a[@href and (contains(@href,'/ch-') or contains(@href,'/ch0') or contains(@href,'/chapter'))]",
+            ContentsDefinesChapterMembership = true
         },
-        new("Star Trek Fan Fiction", "https://trekfanfiction.net/", "trekfanfiction.net",
-            @"/(?<work>(?!(?:category|tag|dtremel|wp-admin|wp-content)/)[a-z0-9-]+/[a-z0-9-]+)/?", "(?!)",
-            "//article//div[contains(concat(' ',normalize-space(@class),' '),' entry-content ')]")
+        new("Chereads", "https://www.chereads.com/", "www.chereads.com",
+            @"/novel/(?<work>[0-9]+)/?", @"/novel/(?<work>[0-9]+)/(?<part>[0-9]+)/?",
+            "//main[@id='content']")
         {
-            CatalogLinks = "//h2/a[@href] | //h3/a[@href]",
-            WorkTitle = "//h1[contains(@class,'entry-title')]",
-            ChapterTitle = "//h1[contains(@class,'entry-title')]",
-            AllowStandalone = "//article//div[contains(concat(' ',normalize-space(@class),' '),' entry-content ')]"
-        },
-        new("RanobeHub", "https://ranobehub.org/", "ranobehub.org",
-            @"/ranobe/(?<work>[a-z0-9-]+)/?", @"/ranobe/(?<work>[a-z0-9-]+)/chapter/(?<part>[0-9]+)/?",
-            "//div[contains(concat(' ',normalize-space(@class),' '),' reader-content ')]")
-        {
-            Contents = "//div[contains(@class,'book-chapter-viewport') and contains(@class,'is-complete')]" +
-                "//a[starts-with(@id,'chapter-list-') and @href]",
-            ReverseContents = true,
-            WorkFromChapter = "/ranobe/${work}"
-        },
-        new("Novels.pl", "https://www.novels.pl/", "www.novels.pl",
-            @"/novel/(?<work>[A-Za-z0-9-]+)/?", @"/novel/(?<work>[A-Za-z0-9-]+)/(?<part>[0-9]+)/[^/]+\.html",
-            "//*[@id='chapter-content']")
-        {
-            WorkTitle = "//meta[@property='og:title']",
-            ChapterTitle = "//meta[@property='og:title']",
-            FirstChapter = "(//table[contains(@class,'listing')]//a[contains(@href,'/1/') and @href])[1]",
-            NextChapter = "//a[normalize-space(.)='Next' and @href and @href!='#']",
+            WorkTitle = "//h1[normalize-space()] | //title",
+            FirstChapter = "(//ul[contains(@class,'ChapterItems_list')]//a[@href])[1]",
+            NextChapter = "//a[@href and (normalize-space(.)='Next Chapter' or @rel='next')]",
             WorkFromChapter = "/novel/${work}"
         },
-        new("SciFi-Stories", "https://scifistories.com/library/new_stories.php", "scifistories.com",
-            @"/s/(?<work>[0-9]+)(?:/[^/]+)?/?", @"/s/(?<work>[0-9]+):(?<part>[0-9]+)(?:/[^/]+)?/?",
-            "//*[@id='sr'] | //article[contains(@class,'story')]")
+        new("Sunovels", "https://sunovels.com/", "sunovels.com",
+            @"/novel/(?<work>[a-z0-9-]+)/?", @"/novel/(?<work>[a-z0-9-]+)/(?<part>[0-9]+(?:\.[0-9]+)?)/?",
+            "//div[contains(concat(' ',normalize-space(@class),' '),' chapter-content ')]")
+        {
+            FirstChapter = "(//div[contains(@class,'header-links')]//a[@href and contains(@href,'/novel/')])[1]",
+            NextChapter = "//a[@class='nextchap' and @href and @href!='#']",
+            WorkFromChapter = "/novel/${work}"
+        },
+        new("Athena Translations", "https://athenatls.com/novels/", "athenatls.com",
+            @"/novel/(?<work>[a-z0-9-]+)/?", @"/(?<work>[a-z0-9-]+?)-(?<part>(?:vol|volume|chapter|prologue|epilogue|extra)-[a-z0-9-]+)/?",
+            "//*[@id='chapter-content']")
+        {
+            CatalogLinks = "//a[contains(concat(' ',normalize-space(@class),' '),' i2-cover ') and @href]",
+            Contents = "//a[contains(concat(' ',normalize-space(@class),' '),' i2-ch ') and starts-with(@href,'https://athenatls.com/') and " +
+                "(contains(@href,'-chapter-') or contains(@href,'-prologue') or contains(@href,'-epilogue') or contains(@href,'-extra-'))]",
+            ContentsDefinesChapterMembership = true
+        },
+        new("FictionHunt", "https://fictionhunt.com/", "fictionhunt.com",
+            @"/stories/(?<work>[a-z0-9]+/[a-z0-9-]+)/?", @"/stories/(?<work>[a-z0-9]+/[a-z0-9-]+)/chapters/(?<part>[0-9]+)/?",
+            "//*[contains(concat(' ',normalize-space(@class),' '),' js-chapter-content ') or @id='chapter-content']")
+        {
+            ChapterTitle = "//h2[contains(@class,'js-chapter-title')] | //title",
+            Contents = "//a[contains(@href,'/chapters/') and @href]",
+            WorkFromChapter = "/stories/${work}"
+        },
+        new("FicWad", "https://ficwad.com/category/18", "ficwad.com",
+            @"/story/(?<work>[0-9]+)/?", @"/story/(?<work>(?<part>[0-9]+))/?", "//*[@id='storytext']")
         {
             WorkTitle = "//title",
             ChapterTitle = "//title",
-            Contents = "//a[contains(@class,'chapter') and starts-with(@href,'/s/') and contains(@href,':')]",
-            AllowStandalone = "//*[@id='sr'] | //article[contains(@class,'story')]",
-            WorkFromChapter = "/s/${work}"
+            Contents = "//ol[not(ancestor::*) or ancestor::*[@id='storytext']]//a[starts-with(@href,'/story/') and not(contains(@href,'/reviews'))]",
+            ContentsDefinesChapterMembership = true,
+            AllowStandalone = "//*[@id='storytext']"
         },
+        new("Fuyu Neko Translations", "https://www.fuyuneko.org/work", "www.fuyuneko.org",
+            @"/(?<work>[a-z][a-z0-9]{2,10})/?",
+            @"/(?:alpaca|bamboo-spirit|blog-1|blog-2|capybara|fuyu-02|manatee)/(?<work>[a-z0-9-]+)/(?<part>[a-z0-9.-]+)/?",
+            SquarespaceReader)
+        {
+            CatalogLinks = "//div[contains(@class,'project-description')]//a[@href and not(contains(@href,'?'))] | " +
+                "//li[contains(@class,'page-collection')]/a[@href]",
+            WorkTitle = "//title",
+            ChapterTitle = "//title",
+            Contents = "//main//a[@href and (contains(@href,'/ch-') or contains(@href,'/ch0'))]",
+            SortContentsByChapterNumber = true,
+            WorkFromChapter = "/${work}"
+        },
+        new("Lois & Clark Fanfic Archive", "https://www.lcfanfic.com/noscript/title/a.html", "www.lcfanfic.com",
+            @"/stories/(?<work>[0-9]{4}/html/[a-zA-Z0-9_-]+)\.html", "(?!)", "//main")
+        {
+            AllowStandalone = "//main[.//p]",
+            WorkTitle = "//main//h1 | //h1",
+            Author = "//main//a[starts-with(@href,'/stories/author/')]",
+            ExcludeContent = ".//header | .//footer | .//h1"
+        }
     ]);
 }
