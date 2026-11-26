@@ -7,7 +7,7 @@ internal static partial class PublicFictionSites
     private const string FanficText = "//div[contains(concat(' ',normalize-space(@class),' '),' ReadContent ')]" +
         "//div[contains(concat(' ',normalize-space(@class),' '),' chapter ')]";
 
-    internal static IReadOnlyList<PublicFictionSite> All => [.. FirstBatch, .. SecondBatch];
+    internal static IReadOnlyList<PublicFictionSite> All => [.. FirstBatch, .. SecondBatch, .. ThirdBatch];
 
     private static readonly PublicFictionSite[] FirstBatch =
     [
