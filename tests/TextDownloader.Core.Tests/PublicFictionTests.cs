@@ -70,6 +70,9 @@ internal static class PublicFictionTests
         Require(registered.Select(site => site.Host).Distinct(StringComparer.OrdinalIgnoreCase).Count() == registered.Length,
             "Each registered public-fiction host must belong to only one batch.");
         var batches = PublicFictionSites.Batches;
+        if (batches.ContainsKey(10))
+            Require(Enumerable.Range(1, 10).All(batchNumber => batches.TryGetValue(batchNumber, out var sitesInBatch) && sitesInBatch.Length == 10),
+                "The version 1.0 registry must cover ten batches of ten public-fiction sites.");
         PublicFictionSite[] sites;
         if (filter is ["--batch", var value] &&
             int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out int number) &&
@@ -118,6 +121,20 @@ internal static class PublicFictionTests
                     new Uri("https://secondlifetranslations.com/novel/oitv/"),
                     new Uri("https://secondlifetranslations.com/novel/abc/"),
                     new Uri("https://secondlifetranslations.com/novel/yay/")
+                ],
+                // These catalogs can omit public entries or mix in projects without an open chapter.
+                "infinitenoveltranslations.net" =>
+                [
+                    new Uri("https://infinitenoveltranslations.net/no-heaven-for-vampires/"),
+                    new Uri("https://infinitenoveltranslations.net/atelier-tanaka/"),
+                    new Uri("https://infinitenoveltranslations.net/im-a-neet-but-when-i-went-to-hello-work-i-got-taken-to-another-world/")
+                ],
+                "re-library.com" =>
+                [
+                    new Uri("https://re-library.com/translations/vpna-prequel/"),
+                    new Uri("https://re-library.com/translations/otherworld-nation-founding-chronicles/"),
+                    new Uri("https://re-library.com/translations/high-comprehension-low-strength/"),
+                    new Uri("https://re-library.com/translations/dragon-princess/")
                 ],
                 _ => (await source.ReadCatalogAsync(timeout.Token)).ToArray()
             };

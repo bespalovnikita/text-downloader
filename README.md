@@ -73,16 +73,8 @@ https://bestweapon.cc/post_124145
 ## Поддержка и ограничения
 
 - Поддерживаются раздел рассказов **Sefan.ru** и публикации **Bestweapon.cc**.
-- Для открытых ранобэ и фанфиков можно вставить ссылку на произведение или главу.
-  Приложение начинает загрузку с первой главы. Поддерживаются FanFiction.Net,
-  FictionPress, Fanfics.me, Ranobe.me, Scribble Hub, Shōsetsuka ni Narō,
-  Kakuyomu, Fimfiction, ReadNovel, ReadNovelFull, Hiraeth Translation,
-  Fantasy World Online, NovelFull, FreeWebNovel, WoopRead, 爱下电子书,
-  NovelRare, Divine Dao Library, NoBadNovel, Lazy Girl Translations, Jobnib,
-  Snowy Codex, TeaNovel, Novel Mania, Dobytranslations, Asura Scans,
-  NovelFrance, MegaNovel, Light Novel Translations, Revenger Novels,
-  Dusk Blossoms, Virlyce, IndoWebNovel, NovelFull.net, WordRain,
-  LabNovel, MyDramaNovel, Psychfic, Portkey Archive и Stories of Arda.
+- Открытые ранобэ и фанфики можно скачивать со 100 дополнительных сайтов.
+  Вставьте ссылку на произведение из [списка источников](docs/PUBLIC_SITES.md).
 - На Sefan состав цикла берётся из оглавления. Каталоги, поиск и страницы
   анонсов `_nova.html` не обрабатываются.
 - На Bestweapon состав и порядок цикла определяются по оглавлению публикации.
