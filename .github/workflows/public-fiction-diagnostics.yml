@@ -23,7 +23,7 @@ jobs:
           from urllib.request import Request, urlopen
           from lxml.html import fromstring, HTMLParser
 
-          urls = {'truyenCatalog': 'https://truyendich.vn/danh-sach/truyen-mien-phi/', 'truyenChapter': 'https://truyendich.vn/ky-nguyen-hon-loan-vo-han-tien-hoa-dinh-phong-chuong-1/chuong-1/', 'lcreader': 'https://www.lcfanfic.com/stories/2007/html/almostfi.html', 'lcreader2': 'https://www.lcfanfic.com/stories/1999/html/afore.html', 'ficwadReader': 'https://ficwad.com/story/162133', 'ficwadReader2': 'https://ficwad.com/story/294024', 'ficwadCat': 'https://ficwad.com/category/18', 'fictionCat': 'https://fictionhunt.com/', 'fictionChapter': 'https://fictionhunt.com/stories/72xvx93/norman-schneider-and-the-wands-of-tears/chapters/1', 'fringeCatalog': 'https://www.fringecapybara.com/', 'fringeReader': 'https://www.fringecapybara.com/married-the-male-leads-brother/ch-001', 'fuyu': 'https://www.fuyuneko.org/work', 'fuyu1': 'https://www.fuyuneko.org/vbms/', 'athenacat': 'https://athenatls.com/novels/', 'novelworldChapter': 'https://novelworldtranslations.com/mas-01/', 'novelspl': 'https://www.novels.pl/novel/Reborn-as-the-Doomed-Heir-of-a-Mage-Dynasty?p=1', 'novelspl2': 'https://www.novels.pl/novel/The-Mech-Touch-WN3?p=1', 'fanficEs': 'https://fanfic.es/popular', 'squidge': 'https://squidgeworld.org/works?work_search%5Brating_ids%5D=10', 'booknet': 'https://booknet.ua/book/stanu-tob-tatom-b429253', 'litgorod': 'https://litgorod.ru/books/view/77686', 'wattpad': 'https://www.wattpad.com/stories/fanfiction', 'silmarillion': 'https://www.silmarillionwritersguild.org/', 'adastra': 'https://www.adastrafanfic.com/works', 'phoenix': 'https://www.phoenixsong.net/fanfiction/story/6629/', 'fanficauthors': 'https://www.fanficauthors.net/', 'novelgo': 'https://novelgo.id/', 'novlove': 'https://novel.citcet.com/', 'webtruyen': 'https://webtruyendich.com/truyen/tu-bao-tien-bon', 'royalroad': 'https://www.royalroad.com/fictions/best-rated', 'fanficgarasu': 'https://www.fanficauthors.net/authors/', 'novelcool': 'https://www.novelcool.com/novel/original/id-263564.html', 'dracosite': 'https://www.dracoandginny.com/', 'bloodshed': 'https://www.bloodshedverse.com/', 'firefly': 'https://www.fireflyfans.net/', 'spike': 'https://spikeluver.com/', 'twilighted': 'https://www.twilighted.net/'}
+          urls = {'fanficEs': 'https://fanfic.es/popular', 'ficwad': 'https://ficwad.com/story/162133', 'ficwad2': 'https://ficwad.com/category/18', 'fictionChapter': 'https://fictionhunt.com/stories/72xvx93/norman-schneider-and-the-wands-of-tears/chapters/1', 'fringeReader': 'https://www.fringecapybara.com/married-the-male-leads-brother/ch-001', 'fringeReader2': 'https://www.fringecapybara.com/finding-my-father/ch-001', 'fuyuBook1': 'https://www.fuyuneko.org/aacw', 'fuyuBook2': 'https://www.fuyuneko.org/mstp', 'fuyuBook3': 'https://www.fuyuneko.org/sflqt', 'fuyuRead': 'https://www.fuyuneko.org/alpaca/vbms/ch-001', 'athenawork': 'https://athenatls.com/novel/the-instructor-of-aerial-combat-wizard-candidates/', 'novelspl': 'https://www.novels.pl/novel/Number-One-Lazy-Merchant-of-the-Beast-World-Novels?p=2', 'squidge1': 'https://squidgeworld.org/works/103071', 'squidge2': 'https://squidgeworld.org/works/129008', 'adastra1': 'https://www.adastrafanfic.com/works/2592', 'adastra2': 'https://www.adastrafanfic.com/works/2887', 'booknet': 'https://booknet.ua/reader/stanu-tob-tatom-b429253?c=4644577', 'litgorod': 'https://litgorod.ru/books/read/77686?chapter=1', 'wattpad': 'https://www.wattpad.com/stories/fanfiction', 'silmarillion': 'https://www.silmarillionwritersguild.org/', 'phoenix': 'https://www.phoenixsong.net/fanfiction/', 'fanficauthors': 'https://jeconais.fanficauthors.net/', 'webtruyen': 'https://webtruyendich.com/truyen/tu-bao-tien-bon/fanqie/chuong-1-nhat-cai-pha-bon', 'novelcool': 'https://www.novelcool.com/chapter/Chapter-1117-First-Encounter-with-the-Tenth-Seat/13462593/', 'bloodshed': 'https://www.bloodshedverse.com/', 'firefly': 'https://www.fireflyfans.net/bluesunroom', 'twilighted': 'https://www.twilighted.net/viewstory.php?sid=5431', 'chereads': 'https://www.chereads.com/novel/23221036805403605/62562062722717955', 'nobadnovel': 'https://www.nobadnovel.com/series/longevity-i-am-an-angel-investor-in-the-cultivation-world', 'novgo': 'https://novgo.net/profound-heaven-soul-sovereign.html', 'novelrare': 'https://novelrare.com/novel/naruto-the-wind-calamity/', 'whizzer': 'https://whatsawhizzerwebnovels.com/novel/i-reincarnated-into-a-single-celled-organism/', 'doby': 'https://dobytranslations.com/series/i-dont-want-to-be-reborn-with-you/', 'novelfrance': 'https://novelfrance.fr/novel/l-heritier-illegitime-du-plus-grand-heros', 'teanovel': 'https://www.teanovel.com/novel/i-became-a-god-in-a-horror-game', 'penguin': 'https://www.royalroad.com/fiction/21220/mother-of-learning', 'asianovel': 'https://www.asianovel.net/stories/', 'kol': 'https://kolnovel.com/series/', 'sonic': 'https://www.sonicmtl.com/novel/', 'lazybird': 'https://lazybirdtranslations.wordpress.com/novels/', 'lemon': 'https://lemontreetranslations.wordpress.com/novels/', 'novelokur': 'https://novelokur.com.tr/rankings/', 'wuxiaclick': 'https://wuxia.click/browse', 'snowycodex': 'https://snowycodex.com/novels/lmstb/', 'woopread': 'https://woopread.com/series/the-star-painting-genius'}
 
           def clean(value, limit=200):
               return " ".join(value.split())[:limit]
@@ -41,7 +41,13 @@ jobs:
                   text = [f"{name} {response_url} {len(html)} {clean(doc.xpath('string(//title)'))}"]
                   text.append("head " + repr([(describe(h), len(h.text_content())) for h in doc.xpath("//h1|//h2")[:7]]))
                   props = {describe(a):sum(len(p.text_content()) for p in a.xpath("./p")) for a in doc.xpath("//p/parent::* | //div[./br]")}
-                  text.append("prose " + repr(sorted(props.items(), key=lambda x:-x[1])[:6]))
+                  blocks=[]
+                  for tag in doc.xpath("//div|//section|//article|//main|//pre|//td"):
+                      length=sum(len(t.strip()) for t in tag.xpath("./text()|./p/text()") if t and t.strip())
+                      if length >= 100:
+                          blocks.append((length,describe(tag),describe(tag.getparent())))
+                  text.append("prose " + repr(sorted(props.items(), key=lambda x:-x[1])[:5]) + "; direct " +
+                              repr(sorted(blocks,reverse=True)[:7]))
                   links = {}
                   for node in doc.xpath("//a[@href]|//option[@value]"):
                       path = node.get("href", node.get("value",""))
@@ -60,6 +66,14 @@ jobs:
                           rank += 10
                       if target.path.startswith(("/story/", "/stories/", "/fiction/", "/works/", "/read/", "/books/read/", "/chapters/", "/reader/", "/novel/", "/obra/", "/fics/", "/fanfic/")) and target.path.strip("/").count("/") > 0:
                           rank += 10
+                      if name == "fanficEs" and target.path.startswith(("/fanfics/", "/read/", "/stories/", "/works/", "/fanfic/", "/works", "/originals/", "/posts/")):
+                          rank += 20
+                      if name == "silmarillion" and any(t in mark for t in ("/node/", "fiction", "works", "fanwork")):
+                          rank += 20
+                      if name == "firefly" and any(t in mark for t in (".asp", "read", "bluesun", "fanfic")):
+                          rank += 20
+                      if name == "bloodshed" and any(t in mark for t in ("chapter", "story", "fic", "browse")):
+                          rank += 20
                       if name.startswith("novelspl"):
                           rank = 20 if "p=" in target.query or ".html" in target.path else rank
                       if name in ("fringeCatalog","fuyu","fuyu1") and any(t in mark for t in ("toc", "/vbms", "/cfm", "/chongfei", "/work", "/chapter")):
@@ -68,7 +82,7 @@ jobs:
                       if absolute in links:
                           continue
                       links[absolute] = (rank, clean(absolute,160), short, describe(node))
-                  text.append("links " + repr([entry[1:] for entry in sorted(links.values(), key=lambda x:-x[0])[:17]]))
+                  text.append("links " + repr([entry[1:] for entry in sorted(links.values(), key=lambda x:-x[0])[:21]]))
                   return "\n".join(text)
               except HTTPError as error:
                   return f"{name} HTTP {error.code} {error.geturl()}"
